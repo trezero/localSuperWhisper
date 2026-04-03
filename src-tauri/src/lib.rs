@@ -1,5 +1,6 @@
 mod audio;
 mod db;
+mod hotkey;
 #[cfg(windows)]
 mod paste;
 mod sounds;
@@ -17,6 +18,7 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 // -- Tauri Commands --
 
@@ -158,6 +160,25 @@ pub fn run() {
                         let _ = settings_window_clone.hide();
                     }
                 });
+            }
+
+            // Register global hotkey
+            {
+                let hotkey_str = {
+                    let app_state = app.state::<AppState>();
+                    let conn = app_state.db.lock().unwrap();
+                    db::get_setting(&conn, "hotkey").unwrap_or_else(|_| "RAlt".to_string())
+                };
+
+                let app_handle = app.handle().clone();
+                app.global_shortcut().on_shortcut(
+                    hotkey_str.as_str(),
+                    move |_app, _shortcut, event| {
+                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            hotkey::on_hotkey_pressed(&app_handle);
+                        }
+                    },
+                )?;
             }
 
             Ok(())
