@@ -167,7 +167,7 @@ pub fn run() {
                 let hotkey_str = {
                     let app_state = app.state::<AppState>();
                     let conn = app_state.db.lock().unwrap();
-                    db::get_setting(&conn, "hotkey").unwrap_or_else(|_| "RAlt".to_string())
+                    db::get_setting(&conn, "hotkey").unwrap_or_else(|_| "AltRight".to_string())
                 };
 
                 let app_handle = app.handle().clone();

@@ -45,14 +45,14 @@ export default function Configuration() {
       {/* Hotkey */}
       <Field label="Hotkey" description="Global keyboard shortcut to start/stop recording.">
         <select
-          value={settings.hotkey || "RAlt"}
+          value={settings.hotkey || "AltRight"}
           onChange={(e) => update("hotkey", e.target.value)}
           className="w-full bg-surface-dark border border-white/10 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
         >
-          <option value="RAlt">Right Alt</option>
-          <option value="LAlt">Left Alt</option>
-          <option value="RControl">Right Ctrl</option>
-          <option value="LControl">Left Ctrl</option>
+          <option value="AltRight">Right Alt</option>
+          <option value="AltLeft">Left Alt</option>
+          <option value="ControlRight">Right Ctrl</option>
+          <option value="ControlLeft">Left Ctrl</option>
           <option value="F9">F9</option>
           <option value="F10">F10</option>
           <option value="F11">F11</option>
