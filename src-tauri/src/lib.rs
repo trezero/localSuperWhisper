@@ -171,14 +171,26 @@ pub fn run() {
                 };
 
                 let app_handle = app.handle().clone();
-                app.global_shortcut().on_shortcut(
+                let register_result = app.global_shortcut().on_shortcut(
                     hotkey_str.as_str(),
                     move |_app, _shortcut, event| {
                         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
                             hotkey::on_hotkey_pressed(&app_handle);
                         }
                     },
-                )?;
+                );
+                if let Err(e) = register_result {
+                    eprintln!("Failed to register hotkey '{}': {}. Falling back to AltRight.", hotkey_str, e);
+                    let app_handle2 = app.handle().clone();
+                    app.global_shortcut().on_shortcut(
+                        "AltRight",
+                        move |_app, _shortcut, event| {
+                            if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                                hotkey::on_hotkey_pressed(&app_handle2);
+                            }
+                        },
+                    )?;
+                }
             }
 
             Ok(())

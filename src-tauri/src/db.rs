@@ -75,6 +75,11 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             ('customize_shortcuts'),
             ('add_vocabulary'),
             ('configure_api');
+
+        UPDATE settings SET value = 'AltRight'    WHERE key = 'hotkey' AND value = 'RAlt';
+        UPDATE settings SET value = 'AltLeft'     WHERE key = 'hotkey' AND value = 'LAlt';
+        UPDATE settings SET value = 'ControlRight' WHERE key = 'hotkey' AND value = 'RControl';
+        UPDATE settings SET value = 'ControlLeft'  WHERE key = 'hotkey' AND value = 'LControl';
         "
     )
 }
