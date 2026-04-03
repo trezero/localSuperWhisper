@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/schemas/master/tauri/v2/tauri.conf.json",
+  "productName": "Local SuperWhisper",
+  "version": "0.1.0",
+  "identifier": "com.localsuperwhisper.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Local SuperWhisper",
+        "url": "index.html#/settings",
+        "width": 850,
+        "height": 600,
+        "minWidth": 700,
+        "minHeight": 500,
+        "visible": false,
+        "center": true,
+        "decorations": true
+      },
+      {
+        "label": "overlay",
+        "url": "index.html#/overlay",
+        "width": 300,
+        "height": 120,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false
+    },
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": ["sounds/*"]
+  }
+}

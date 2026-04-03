@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  background: transparent;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #e4e4e7;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
