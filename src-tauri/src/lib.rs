@@ -3,13 +3,177 @@ mod db;
 #[cfg(windows)]
 mod paste;
 mod sounds;
+mod state;
 mod transcribe;
+
+use audio::AudioDevice;
+use db::{ChecklistStep, HistoryEntry, Stats, VocabularyEntry};
+use state::{AppState, RecordingState};
+
+use rusqlite::Connection;
+use std::sync::Mutex;
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager,
+};
+
+// -- Tauri Commands --
+
+#[tauri::command]
+fn get_stats(state: tauri::State<'_, AppState>) -> Result<Stats, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_stats(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_history(state: tauri::State<'_, AppState>, limit: i32) -> Result<Vec<HistoryEntry>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_history(&conn, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_vocabulary(state: tauri::State<'_, AppState>) -> Result<Vec<VocabularyEntry>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_vocabulary(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_vocabulary_term(state: tauri::State<'_, AppState>, term: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::add_vocabulary(&conn, &term).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_vocabulary_term(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::remove_vocabulary(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_settings(state: tauri::State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_all_settings(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_setting(state: tauri::State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_checklist(state: tauri::State<'_, AppState>) -> Result<Vec<ChecklistStep>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_checklist(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn complete_checklist_step(state: tauri::State<'_, AppState>, step_id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::complete_checklist_step(&conn, &step_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_audio_devices() -> Vec<AudioDevice> {
+    audio::list_input_devices()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // Initialize database
+            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+            std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
+            let db_path = app_data_dir.join("local_super_whisper.db");
+            let conn = Connection::open(&db_path).expect("Failed to open database");
+            db::init_db(&conn).expect("Failed to initialize database");
+
+            // Initialize sounds
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                sounds::init_sounds(resource_dir);
+            }
+
+            // Manage state
+            app.manage(AppState {
+                recording_state: Mutex::new(RecordingState::Idle),
+                recorder: Mutex::new(audio::AudioRecorder::new()),
+                db: Mutex::new(conn),
+                target_window: Mutex::new(None),
+            });
+
+            // Build tray menu
+            let show_item = MenuItemBuilder::with_id("show", "Open Settings").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            // Create tray icon
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("Local SuperWhisper")
+                .on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("settings") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("settings") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Apply window vibrancy to settings window
+            if let Some(settings_window) = app.get_webview_window("settings") {
+                #[cfg(target_os = "windows")]
+                {
+                    use window_vibrancy::apply_mica;
+                    let _ = apply_mica(&settings_window, Some(true));
+                }
+                // Hide settings on close instead of quitting
+                let settings_window_clone = settings_window.clone();
+                settings_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = settings_window_clone.hide();
+                    }
+                });
+            }
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_stats,
+            get_history,
+            get_vocabulary,
+            add_vocabulary_term,
+            remove_vocabulary_term,
+            get_settings,
+            update_setting,
+            get_checklist,
+            complete_checklist_step,
+            get_audio_devices,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
