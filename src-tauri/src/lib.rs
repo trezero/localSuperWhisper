@@ -1,5 +1,7 @@
 mod audio;
 mod db;
+#[cfg(windows)]
+mod paste;
 mod sounds;
 mod transcribe;
 
