@@ -94,7 +94,7 @@ localSuperWhisper/
 | settings | `index.html#/settings` | **true** (dev) / false (prod) | Changed to true for WSL2 dev |
 | overlay | `index.html#/overlay` | false | Transparent, always-on-top, no decorations |
 
-> **Important:** `visible: true` on the settings window is a dev-only change for WSL2. On Windows native, set it back to `false` — the window is opened via the system tray icon.
+> **Status (2026-04-03):** Reverted to `visible: false` for Windows native development. The tray icon works on Windows — right-click it to open the Settings window.
 
 ---
 

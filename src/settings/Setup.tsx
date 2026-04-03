@@ -86,7 +86,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
             Choose a global hotkey to start and stop recording from anywhere.
           </p>
           <p className="text-text-muted text-xs mt-2">
-            Tip: F9–F12 and other non-modifier keys work most reliably.
+            Try any key — F-keys, Right Alt, or other keys you rarely use while typing.
           </p>
         </div>
 

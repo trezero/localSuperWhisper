@@ -15,6 +15,7 @@ pub struct AudioRecorder {
     buffer: Arc<Mutex<Vec<f32>>>,
     stream: Option<Stream>,
     sample_rate: u32,
+    channels: u16,
 }
 
 pub fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
@@ -82,6 +83,7 @@ impl AudioRecorder {
             buffer: Arc::new(Mutex::new(Vec::new())),
             stream: None,
             sample_rate: 16000,
+            channels: 1,
         }
     }
 
@@ -89,38 +91,49 @@ impl AudioRecorder {
         let device = get_device_by_name(device_name)
             .ok_or_else(|| format!("Audio device not found: {}", device_name))?;
 
-        let config = StreamConfig {
-            channels: 1,
-            sample_rate: SampleRate(16000),
-            buffer_size: cpal::BufferSize::Default,
-        };
+        // Prefer 16 kHz mono. If the device doesn't support mono, use its
+        // default config (which may be stereo) and downmix when stopping.
+        let (config, sample_rate, channels) = {
+            let supports_16k_mono = device
+                .supported_input_configs()
+                .ok()
+                .map(|mut cfgs| {
+                    cfgs.any(|c| {
+                        c.channels() == 1
+                            && c.min_sample_rate().0 <= 16000
+                            && c.max_sample_rate().0 >= 16000
+                    })
+                })
+                .unwrap_or(false);
 
-        // Try 16kHz mono; fall back to device default if unsupported
-        let (config, sample_rate) = match device.supported_input_configs() {
-            Ok(mut configs) => {
-                if configs.any(|c| {
-                    c.channels() == 1
-                        && c.min_sample_rate().0 <= 16000
-                        && c.max_sample_rate().0 >= 16000
-                }) {
-                    (config, 16000)
-                } else {
-                    let default_config = device.default_input_config().map_err(|e| e.to_string())?;
-                    let sr = default_config.sample_rate().0;
-                    (
-                        StreamConfig {
-                            channels: 1,
-                            sample_rate: SampleRate(sr),
-                            buffer_size: cpal::BufferSize::Default,
-                        },
-                        sr,
-                    )
-                }
+            if supports_16k_mono {
+                (
+                    StreamConfig {
+                        channels: 1,
+                        sample_rate: SampleRate(16000),
+                        buffer_size: cpal::BufferSize::Default,
+                    },
+                    16000u32,
+                    1u16,
+                )
+            } else {
+                let default = device.default_input_config().map_err(|e| e.to_string())?;
+                let sr = default.sample_rate().0;
+                let ch = default.channels();
+                (
+                    StreamConfig {
+                        channels: ch,
+                        sample_rate: SampleRate(sr),
+                        buffer_size: cpal::BufferSize::Default,
+                    },
+                    sr,
+                    ch,
+                )
             }
-            Err(_) => (config, 16000),
         };
 
         self.sample_rate = sample_rate;
+        self.channels = channels;
         self.buffer.lock().unwrap().clear();
 
         let buffer = Arc::clone(&self.buffer);
@@ -142,21 +155,44 @@ impl AudioRecorder {
 
     pub fn get_current_level(&self) -> f32 {
         let buffer = self.buffer.lock().unwrap();
-        if buffer.len() < 800 {
+        let ch = self.channels as usize;
+        let needed = 800 * ch;
+        if buffer.len() < needed {
             return 0.0;
         }
-        compute_rms(&buffer[buffer.len() - 800..])
+        let tail = &buffer[buffer.len() - needed..];
+        if ch == 1 {
+            compute_rms(tail)
+        } else {
+            let mono: Vec<f32> = tail
+                .chunks(ch)
+                .map(|frame| frame.iter().sum::<f32>() / ch as f32)
+                .collect();
+            compute_rms(&mono)
+        }
     }
 
     pub fn stop(&mut self) -> (Vec<u8>, u64) {
         self.stream = None; // Drops the stream, stopping recording
         let samples: Vec<f32> = std::mem::take(&mut *self.buffer.lock().unwrap());
+
+        // Downmix multichannel to mono by averaging channels per frame
+        let mono: Vec<f32> = if self.channels > 1 {
+            let ch = self.channels as usize;
+            samples
+                .chunks(ch)
+                .map(|frame| frame.iter().sum::<f32>() / ch as f32)
+                .collect()
+        } else {
+            samples
+        };
+
         let duration_ms = if self.sample_rate > 0 {
-            (samples.len() as u64 * 1000) / self.sample_rate as u64
+            (mono.len() as u64 * 1000) / self.sample_rate as u64
         } else {
             0
         };
-        let wav = encode_wav(&samples, self.sample_rate);
+        let wav = encode_wav(&mono, self.sample_rate);
         (wav, duration_ms)
     }
 }

@@ -3,6 +3,8 @@ mod db;
 mod hotkey;
 #[cfg(windows)]
 mod paste;
+#[cfg(windows)]
+mod win32_hotkey;
 mod sounds;
 mod state;
 mod transcribe;
@@ -83,10 +85,32 @@ fn get_audio_devices() -> Vec<AudioDevice> {
 
 #[tauri::command]
 fn register_hotkey(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    // Stop any existing Win32 raw hotkey thread first
+    #[cfg(windows)]
+    {
+        let state = app.state::<AppState>();
+        let mut tid = state.raw_hotkey_thread_id.lock().unwrap();
+        if let Some(thread_id) = tid.take() {
+            win32_hotkey::stop(thread_id);
+        }
+    }
+
     app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+
     if key.is_empty() {
         return Ok(());
     }
+
+    // Bare modifier keys (AltRight, ControlLeft, etc.) can't go through
+    // tauri-plugin-global-shortcut — use Win32 RegisterHotKey instead.
+    #[cfg(windows)]
+    if let Some(vk) = win32_hotkey::win32_vk_for_key(&key) {
+        let state = app.state::<AppState>();
+        let thread_id = win32_hotkey::start(vk, app.clone())?;
+        *state.raw_hotkey_thread_id.lock().unwrap() = Some(thread_id);
+        return Ok(());
+    }
+
     let app_handle = app.clone();
     app.global_shortcut()
         .on_shortcut(key.as_str(), move |_app, _shortcut, event| {
@@ -121,6 +145,8 @@ pub fn run() {
                 recorder: Mutex::new(audio::AudioRecorder::new()),
                 db: Mutex::new(conn),
                 target_window: Mutex::new(None),
+                #[cfg(windows)]
+                raw_hotkey_thread_id: Mutex::new(None),
             });
 
             // Build tray menu
@@ -161,13 +187,8 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Apply window vibrancy to settings window
+            // Settings window close → hide instead of quit
             if let Some(settings_window) = app.get_webview_window("settings") {
-                #[cfg(target_os = "windows")]
-                {
-                    use window_vibrancy::apply_mica;
-                    let _ = apply_mica(&settings_window, Some(true));
-                }
                 // Hide settings on close instead of quitting
                 let settings_window_clone = settings_window.clone();
                 settings_window.on_window_event(move |event| {
@@ -187,19 +208,42 @@ pub fn run() {
                 };
 
                 if !hotkey_str.is_empty() {
-                    let app_handle = app.handle().clone();
-                    if let Err(e) = app.global_shortcut().on_shortcut(
-                        hotkey_str.as_str(),
-                        move |_app, _shortcut, event| {
-                            if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                                hotkey::on_hotkey_pressed(&app_handle);
+                    // Bare modifier keys use the Win32 RegisterHotKey path
+                    #[cfg(windows)]
+                    let registered = if let Some(vk) = win32_hotkey::win32_vk_for_key(&hotkey_str) {
+                        match win32_hotkey::start(vk, app.handle().clone()) {
+                            Ok(thread_id) => {
+                                let app_state = app.state::<AppState>();
+                                *app_state.raw_hotkey_thread_id.lock().unwrap() = Some(thread_id);
+                                true
                             }
-                        },
-                    ) {
-                        eprintln!("Hotkey '{}' is invalid ({}). Clearing — setup screen will appear.", hotkey_str, e);
-                        let app_state = app.state::<AppState>();
-                        let conn = app_state.db.lock().unwrap();
-                        let _ = db::set_setting(&conn, "hotkey", "");
+                            Err(e) => {
+                                eprintln!("Win32 hotkey '{}' failed ({}). Clearing.", hotkey_str, e);
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    };
+
+                    #[cfg(not(windows))]
+                    let registered = false;
+
+                    if !registered {
+                        let app_handle = app.handle().clone();
+                        if let Err(e) = app.global_shortcut().on_shortcut(
+                            hotkey_str.as_str(),
+                            move |_app, _shortcut, event| {
+                                if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                                    hotkey::on_hotkey_pressed(&app_handle);
+                                }
+                            },
+                        ) {
+                            eprintln!("Hotkey '{}' is invalid ({}). Clearing — setup screen will appear.", hotkey_str, e);
+                            let app_state = app.state::<AppState>();
+                            let conn = app_state.db.lock().unwrap();
+                            let _ = db::set_setting(&conn, "hotkey", "");
+                        }
                     }
                 }
             }

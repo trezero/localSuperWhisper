@@ -4,10 +4,15 @@
 
 body {
   margin: 0;
-  background: transparent;
+  background: #1a1a1a;
   font-family: "Segoe UI", system-ui, sans-serif;
   color: #e4e4e7;
   overflow: hidden;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* Overlay window must be transparent so the floating card shows over other apps */
+body.overlay-window {
+  background: transparent;
 }

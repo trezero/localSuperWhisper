@@ -15,6 +15,9 @@ pub struct AppState {
     pub recorder: Mutex<AudioRecorder>,
     pub db: Mutex<Connection>,
     pub target_window: Mutex<Option<isize>>,
+    /// Windows thread ID of the active RegisterHotKey thread, if a bare modifier key is set.
+    #[cfg(windows)]
+    pub raw_hotkey_thread_id: Mutex<Option<u32>>,
 }
 
 // AudioRecorder contains a cpal Stream which uses PhantomData<*mut ()> internally
