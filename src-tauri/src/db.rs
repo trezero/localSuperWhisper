@@ -63,7 +63,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         );
 
         INSERT OR IGNORE INTO settings (key, value) VALUES
-            ('hotkey', 'AltRight'),
+            ('hotkey', ''),
             ('api_url', 'http://172.16.1.222:8028/v1'),
             ('api_key', 'cant-be-empty'),
             ('model_id', 'deepdml/faster-whisper-large-v3-turbo-ct2'),
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_default_settings_seeded() {
         let conn = setup_db();
-        assert_eq!(get_setting(&conn, "hotkey").unwrap(), "AltRight");
+        assert_eq!(get_setting(&conn, "hotkey").unwrap(), "");
         assert_eq!(get_setting(&conn, "api_url").unwrap(), "http://172.16.1.222:8028/v1");
         assert_eq!(get_setting(&conn, "api_key").unwrap(), "cant-be-empty");
         assert_eq!(get_setting(&conn, "model_id").unwrap(), "deepdml/faster-whisper-large-v3-turbo-ct2");

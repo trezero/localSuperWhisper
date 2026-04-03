@@ -19,7 +19,7 @@
         "height": 600,
         "minWidth": 700,
         "minHeight": 500,
-        "visible": false,
+        "visible": true,
         "center": true,
         "decorations": true
       },

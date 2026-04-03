@@ -81,6 +81,22 @@ fn get_audio_devices() -> Vec<AudioDevice> {
     audio::list_input_devices()
 }
 
+#[tauri::command]
+fn register_hotkey(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+    if key.is_empty() {
+        return Ok(());
+    }
+    let app_handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(key.as_str(), move |_app, _shortcut, event| {
+            if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                hotkey::on_hotkey_pressed(&app_handle);
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -162,34 +178,29 @@ pub fn run() {
                 });
             }
 
-            // Register global hotkey
+            // Register global hotkey (skipped if not yet configured)
             {
                 let hotkey_str = {
                     let app_state = app.state::<AppState>();
                     let conn = app_state.db.lock().unwrap();
-                    db::get_setting(&conn, "hotkey").unwrap_or_else(|_| "AltRight".to_string())
+                    db::get_setting(&conn, "hotkey").unwrap_or_default()
                 };
 
-                let app_handle = app.handle().clone();
-                let register_result = app.global_shortcut().on_shortcut(
-                    hotkey_str.as_str(),
-                    move |_app, _shortcut, event| {
-                        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            hotkey::on_hotkey_pressed(&app_handle);
-                        }
-                    },
-                );
-                if let Err(e) = register_result {
-                    eprintln!("Failed to register hotkey '{}': {}. Falling back to AltRight.", hotkey_str, e);
-                    let app_handle2 = app.handle().clone();
-                    app.global_shortcut().on_shortcut(
-                        "AltRight",
+                if !hotkey_str.is_empty() {
+                    let app_handle = app.handle().clone();
+                    if let Err(e) = app.global_shortcut().on_shortcut(
+                        hotkey_str.as_str(),
                         move |_app, _shortcut, event| {
                             if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                                hotkey::on_hotkey_pressed(&app_handle2);
+                                hotkey::on_hotkey_pressed(&app_handle);
                             }
                         },
-                    )?;
+                    ) {
+                        eprintln!("Hotkey '{}' is invalid ({}). Clearing — setup screen will appear.", hotkey_str, e);
+                        let app_state = app.state::<AppState>();
+                        let conn = app_state.db.lock().unwrap();
+                        let _ = db::set_setting(&conn, "hotkey", "");
+                    }
                 }
             }
 
@@ -206,6 +217,7 @@ pub fn run() {
             get_checklist,
             complete_checklist_step,
             get_audio_devices,
+            register_hotkey,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
