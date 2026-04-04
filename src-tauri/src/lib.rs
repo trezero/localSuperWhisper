@@ -1,7 +1,6 @@
 mod audio;
 mod db;
 mod hotkey;
-#[cfg(windows)]
 mod paste;
 #[cfg(windows)]
 mod win32_hotkey;
@@ -177,8 +176,9 @@ pub fn run() {
             db::init_db(&conn).expect("Failed to initialize database");
 
             // Initialize sounds
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                sounds::init_sounds(resource_dir);
+            match app.path().resource_dir() {
+                Ok(resource_dir) => sounds::init_sounds(resource_dir),
+                Err(e) => eprintln!("Failed to get resource_dir for sounds: {}", e),
             }
 
             // Manage state

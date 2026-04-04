@@ -1,3 +1,22 @@
+## Multi-Platform App — Critical Constraint
+
+This app targets **three platforms** and all must be kept working at all times:
+
+- **Windows 10/11**
+- **Ubuntu 22+ Linux desktop**
+- **macOS**
+
+**Every change must be evaluated for cross-platform impact.** Before modifying platform-specific code (hotkeys, clipboard/paste, file paths, shell commands, Tauri APIs, UI behavior):
+
+1. Check whether the code path is shared or platform-gated.
+2. If fixing or adding something for one platform, verify it does not break the other two.
+3. Use `cfg(target_os)` guards in Rust and runtime OS checks in TypeScript where behavior must diverge.
+4. Never hard-code platform-specific paths, binaries, or assumptions without a cross-platform fallback or guard.
+
+If unsure whether a change is safe across all platforms, flag it to the user before proceeding.
+
+---
+
 ## Session Start — Read Current Status First
 
 At the start of **every** session, before doing anything else:

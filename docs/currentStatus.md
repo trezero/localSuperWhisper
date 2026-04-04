@@ -1,6 +1,6 @@
 # Local SuperWhisper — Current Status
 
-Last updated: 2026-04-03 (WSL2 dev session)
+Last updated: 2026-04-04 (Linux port session)
 
 ---
 
@@ -142,6 +142,39 @@ localSuperWhisper/
 
 ---
 
+## Linux Support (added 2026-04-04)
+
+The app now builds and runs on Ubuntu 22.04 (X11) in addition to Windows 10.
+
+### What was done
+- **paste.rs**: Added `#[cfg(target_os = "linux")]` implementations of `capture_foreground_window()` (via `xdotool getactivewindow`) and window restore (via `xdotool windowactivate`). Wayland sessions gracefully skip window capture/restore.
+- **lib.rs**: `mod paste` is now unconditional (was `#[cfg(windows)]`).
+- **hotkey.rs**: `paste::capture_foreground_window()` and `paste::paste_text()` calls are now unconditional (were gated behind `#[cfg(windows)]`).
+- **tauri.conf.json**: Added `bundle.linux` section with deb depends, desktop template, and appimage config.
+- **manage.sh**: Added platform detection (`uname -s`), Linux autostart via `~/.config/autostart/*.desktop`, and option 9 "Install Build Dependencies" (Linux only).
+- **ecosystem.config.cjs**: EXE path is now platform-aware (`process.platform`).
+- **desktop-template.hbs**: Handlebars template for `.desktop` file in deb package.
+
+### Linux build dependencies
+```bash
+sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev libasound2-dev libssl-dev \
+  pkg-config xdotool libxdo-dev
+```
+
+### Linux build artifacts
+- Binary: `src-tauri/target/release/local-super-whisper` (19MB)
+- Deb: `src-tauri/target/release/bundle/deb/Local SuperWhisper_0.1.0_amd64.deb`
+- RPM: `src-tauri/target/release/bundle/rpm/Local SuperWhisper-0.1.0-1.x86_64.rpm`
+- AppImage: requires desktop session to build (linuxdeploy needs DISPLAY)
+
+### Linux known limitations
+- **Wayland**: Window capture/restore is skipped — clipboard paste still works but can't auto-focus the target window
+- **AppImage bundling**: Fails in headless environments; works from desktop terminal
+- **Modifier-only hotkeys**: Not supported on Linux (same as current limitation, use F9–F12)
+
+---
+
 ## Known Issues / Next Steps
 
 ### Unresolved
@@ -149,7 +182,8 @@ localSuperWhisper/
 - **WSL2 tray icon**: System tray icon doesn't appear when running via WSLg. Settings window is set to `visible: true` as a workaround for dev. This needs to be reverted to `false` for production builds.
 
 ### Ready to work on
-- Test on Windows native (copy repo, install Rust + Node, run `npm run tauri -- dev`)
+- Test the Linux build on an Ubuntu 22 desktop with display (tray icon, overlay transparency, audio recording, paste)
+- Test on Windows native to confirm no regressions from the Linux port
 - Revert `settings` window `visible` to `false` before building for production
 - Complete the onboarding checklist UX (checklist steps aren't being auto-completed yet)
 - The `customize_shortcuts` checklist step should auto-complete after the user sets a hotkey in Setup
@@ -158,15 +192,22 @@ localSuperWhisper/
 
 ## Running the App
 
-### WSL2 (development only)
-```bash
-npm run tauri -- dev
-```
-Window opens automatically (WSLg renders it). Tray icon won't appear — this is a WSLg limitation.
+### Linux (Ubuntu 22.04)
+1. Install dependencies: `./manage.sh` → option 9, or run `sudo apt install ...` (see above)
+2. Install [Rust](https://rustup.rs) and Node.js
+3. `npm install`
+4. `npm run tauri -- dev`    ← dev mode with hot reload
+5. `npm run tauri -- build`  ← produces binary + `.deb` + `.rpm` in `src-tauri/target/release/bundle/`
 
-### Windows native (recommended for real use)
+### Windows native
 1. Install [Rust](https://rustup.rs) and Node.js on Windows
 2. Clone the repo on Windows
 3. `npm install`
 4. `npm run tauri -- dev`    ← dev mode with hot reload
 5. `npm run tauri -- build`  ← produces `.msi` installer in `src-tauri/target/release/bundle/`
+
+### WSL2 (development only)
+```bash
+npm run tauri -- dev
+```
+Window opens automatically (WSLg renders it). Tray icon won't appear — this is a WSLg limitation.
