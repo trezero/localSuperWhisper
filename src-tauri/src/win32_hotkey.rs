@@ -45,13 +45,12 @@ pub fn start(vk: u32, app_handle: AppHandle) -> Result<u32, String> {
 
         let mut msg = MSG::default();
         loop {
-            match GetMessageW(&mut msg, None, 0, 0).0 {
-                0 | -1 => break, // WM_QUIT or error
-                _ => {
-                    if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == HOTKEY_REG_ID {
-                        hotkey::on_hotkey_pressed(&app_handle);
-                    }
-                }
+            // GetMessageW returns BOOL: .0 is i32, 0 = WM_QUIT, -1 = error, >0 = message
+            if GetMessageW(&mut msg, None, 0, 0).0 <= 0 {
+                break;
+            }
+            if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == HOTKEY_REG_ID {
+                hotkey::on_hotkey_pressed(&app_handle);
             }
         }
 

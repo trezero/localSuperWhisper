@@ -97,15 +97,16 @@ fn stop_recording(app: &AppHandle) {
     *state.recording_state.lock().unwrap() = RecordingState::Transcribing;
     let _ = app.emit("recording-transcribing", ());
 
-    // Get API settings and vocabulary
-    let (api_url, api_key, model_id, vocabulary) = {
+    // Get API settings, vocabulary, and corrections
+    let (api_url, api_key, model_id, vocabulary, corrections) = {
         let conn = state.db.lock().unwrap();
         let api_url = db::get_setting(&conn, "api_url").unwrap_or_default();
         let api_key = db::get_setting(&conn, "api_key").unwrap_or_default();
         let model_id = db::get_setting(&conn, "model_id").unwrap_or_default();
         let vocab_entries = db::get_vocabulary(&conn).unwrap_or_default();
         let vocabulary: Vec<String> = vocab_entries.into_iter().map(|v| v.term).collect();
-        (api_url, api_key, model_id, vocabulary)
+        let corrections = db::get_corrections(&conn).unwrap_or_default();
+        (api_url, api_key, model_id, vocabulary, corrections)
     };
 
     let target_window = *state.target_window.lock().unwrap();
@@ -125,7 +126,8 @@ fn stop_recording(app: &AppHandle) {
         let state = app_handle.state::<AppState>();
 
         match result {
-            Ok(text) if !text.is_empty() => {
+            Ok(raw) if !raw.is_empty() => {
+                let text = db::apply_corrections(&raw, &corrections);
                 // Paste text into target window
                 #[cfg(windows)]
                 if let Err(e) = crate::paste::paste_text(&text, target_window) {

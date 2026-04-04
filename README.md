@@ -69,6 +69,101 @@ On first launch, the app detects that no hotkey has been configured and shows a 
 
 ---
 
+## Running as a Background Service (PM2)
+
+The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). This keeps it running automatically, restarts it if it crashes, and can launch it at Windows login.
+
+### 1. Install PM2
+
+```bash
+npm install -g pm2
+npm install -g pm2-windows-startup
+```
+
+### 2. First deploy
+
+Build the app and start it under PM2 in one step:
+
+```bash
+./manage.sh redeploy
+```
+
+This runs the full Rust + frontend build and registers the process with PM2.
+
+### 3. Enable startup on Windows login
+
+```bash
+./manage.sh startup
+```
+
+This saves the current PM2 process list (`pm2 save`) and installs a Windows Task Scheduler entry via `pm2-windows-startup`. On every login, PM2 resurrects the saved list — including this app.
+
+> **Note:** Run `./manage.sh startup` again any time you add or remove processes from PM2 to update the saved list.
+
+---
+
+## manage.sh — Process Manager CLI
+
+`manage.sh` is an interactive shell tool for managing the app's lifecycle. Run it with no arguments for a menu, or pass a command directly.
+
+```
+Usage: ./manage.sh [command]
+
+Commands:
+  start      Start the app under PM2
+  stop       Stop the running app
+  restart    Restart the app
+  logs       Tail live logs (Ctrl+C to exit)
+  redeploy   Full rebuild (frontend + Rust) then restart
+  status     Show PM2 process table
+  startup    Enable auto-start on Windows login
+```
+
+**Interactive menu:**
+
+```bash
+./manage.sh
+```
+
+```
+╔══════════════════════════════════════╗
+║   Local SuperWhisper — Manager       ║
+╚══════════════════════════════════════╝
+
+  1) Start
+  2) Stop
+  3) Restart
+  4) View Logs
+  5) Redeploy  (build + restart)
+  6) Status
+  7) Enable Startup on Login
+  8) Disable Startup on Login
+  0) Exit
+```
+
+### Restart behavior
+
+| Scenario | PM2 behavior |
+|---|---|
+| App crashes (non-zero exit) | Auto-restarts, up to 10 times |
+| User closes via tray icon | **Not** restarted — intentional exit is respected |
+| Windows login | PM2 resurrects the saved process list |
+
+This is controlled by `stop_exit_codes: [0]` in `ecosystem.config.cjs`: PM2 only auto-restarts on non-zero exit codes (crashes), not on clean shutdowns.
+
+### Log files
+
+Crash logs and stderr output are written to:
+
+```
+logs/app-err.log
+logs/app-out.log
+```
+
+The `logs/` directory is git-ignored. You can also view live logs with `./manage.sh logs` or `pm2 logs localSuperWhisper`.
+
+---
+
 ## Architecture
 
 ```

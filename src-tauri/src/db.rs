@@ -27,6 +27,13 @@ pub struct Stats {
 }
 
 #[derive(Debug, Serialize, Clone)]
+pub struct CorrectionEntry {
+    pub id: i64,
+    pub from_text: String,
+    pub to_text: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct ChecklistStep {
     pub step_id: String,
     pub completed: bool,
@@ -69,6 +76,12 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             ('model_id', 'deepdml/faster-whisper-large-v3-turbo-ct2'),
             ('mic_device', 'default'),
             ('typing_speed_wpm', '40');
+
+        CREATE TABLE IF NOT EXISTS corrections (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_text TEXT NOT NULL,
+            to_text   TEXT NOT NULL
+        );
 
         INSERT OR IGNORE INTO checklist (step_id) VALUES
             ('start_recording'),
@@ -187,6 +200,54 @@ pub fn get_checklist(conn: &Connection) -> Result<Vec<ChecklistStep>> {
         })
     })?.filter_map(|r| r.ok()).collect();
     Ok(entries)
+}
+
+pub fn get_corrections(conn: &Connection) -> Result<Vec<CorrectionEntry>> {
+    let mut stmt = conn.prepare("SELECT id, from_text, to_text FROM corrections ORDER BY id")?;
+    let entries = stmt.query_map([], |row| {
+        Ok(CorrectionEntry {
+            id: row.get(0)?,
+            from_text: row.get(1)?,
+            to_text: row.get(2)?,
+        })
+    })?.filter_map(|r| r.ok()).collect();
+    Ok(entries)
+}
+
+pub fn add_correction(conn: &Connection, from_text: &str, to_text: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO corrections (from_text, to_text) VALUES (?1, ?2)",
+        params![from_text, to_text],
+    )?;
+    Ok(())
+}
+
+pub fn remove_correction(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM corrections WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Apply all corrections to a transcription result (case-insensitive matching).
+pub fn apply_corrections(text: &str, corrections: &[CorrectionEntry]) -> String {
+    let mut result = text.to_string();
+    for c in corrections {
+        if c.from_text.is_empty() {
+            continue;
+        }
+        let lower_result = result.to_lowercase();
+        let lower_from = c.from_text.to_lowercase();
+        let mut output = String::new();
+        let mut search_start = 0;
+        while let Some(pos) = lower_result[search_start..].find(&lower_from) {
+            let abs_pos = search_start + pos;
+            output.push_str(&result[search_start..abs_pos]);
+            output.push_str(&c.to_text);
+            search_start = abs_pos + c.from_text.len();
+        }
+        output.push_str(&result[search_start..]);
+        result = output;
+    }
+    result
 }
 
 pub fn complete_checklist_step(conn: &Connection, step_id: &str) -> Result<()> {
