@@ -1,6 +1,6 @@
 # Local SuperWhisper
 
-A lightweight Windows 10/11 desktop app that replicates the core [Superwhisper](https://superwhisper.com) workflow using a **self-hosted** Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted into whatever window you were using — no cloud, no subscription.
+A lightweight desktop app for **Windows** and **Linux** that replicates the core [Superwhisper](https://superwhisper.com) workflow using a **self-hosted** Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted into whatever window you were using — no cloud, no subscription.
 
 Built with [Tauri v2](https://tauri.app) (Rust backend) and React + TypeScript + Tailwind CSS (frontend).
 
@@ -19,11 +19,23 @@ The app lives in the system tray and stays out of your way until you need it.
 
 ## Prerequisites
 
-### Windows (required for production use)
+### All Platforms
 
 - [Rust](https://rustup.rs) (stable toolchain)
 - [Node.js](https://nodejs.org) (v18 or later)
 - A running [Faster-Whisper](https://github.com/SYSTRAN/faster-whisper) server exposing an OpenAI-compatible `/v1/audio/transcriptions` endpoint
+
+### Linux (Ubuntu 22.04+)
+
+Install build dependencies:
+
+```bash
+sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev libasound2-dev libssl-dev \
+  pkg-config xdotool libxdo-dev
+```
+
+Or use the manage.sh menu: option **9) Install Build Dependencies**.
 
 ### Faster-Whisper Server
 
@@ -57,11 +69,12 @@ npm run tauri -- dev
 npm run tauri -- build
 ```
 
-This produces an `.msi` installer at:
+Build artifacts by platform:
 
-```
-src-tauri/target/release/bundle/msi/
-```
+| Platform | Output |
+|----------|--------|
+| Windows | `.msi` installer in `src-tauri/target/release/bundle/msi/` |
+| Linux | `.deb` and `.rpm` in `src-tauri/target/release/bundle/deb/` and `rpm/` |
 
 ### First run
 
@@ -71,13 +84,12 @@ On first launch, the app detects that no hotkey has been configured and shows a 
 
 ## Running as a Background Service (PM2)
 
-The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). This keeps it running automatically, restarts it if it crashes, and can launch it at Windows login.
+The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). This keeps it running automatically, restarts it if it crashes, and can launch it at login.
 
 ### 1. Install PM2
 
 ```bash
 npm install -g pm2
-npm install -g pm2-windows-startup
 ```
 
 ### 2. First deploy
@@ -90,13 +102,14 @@ Build the app and start it under PM2 in one step:
 
 This runs the full Rust + frontend build and registers the process with PM2.
 
-### 3. Enable startup on Windows login
+### 3. Enable startup on login
 
 ```bash
 ./manage.sh startup
 ```
 
-This saves the current PM2 process list (`pm2 save`) and installs a Windows Task Scheduler entry via `pm2-windows-startup`. On every login, PM2 resurrects the saved list — including this app.
+- **Windows:** Saves the PM2 process list and installs a Task Scheduler entry via `pm2-windows-startup`.
+- **Linux:** Creates a `.desktop` autostart entry in `~/.config/autostart/`.
 
 > **Note:** Run `./manage.sh startup` again any time you add or remove processes from PM2 to update the saved list.
 
@@ -138,6 +151,7 @@ Commands:
   6) Status
   7) Enable Startup on Login
   8) Disable Startup on Login
+  9) Install Build Dependencies  [Linux only]
   0) Exit
 ```
 
@@ -147,7 +161,7 @@ Commands:
 |---|---|
 | App crashes (non-zero exit) | Auto-restarts, up to 10 times |
 | User closes via tray icon | **Not** restarted — intentional exit is respected |
-| Windows login | PM2 resurrects the saved process list |
+| Login (Windows/Linux) | PM2 resurrects the saved process list |
 
 This is controlled by `stop_exit_codes: [0]` in `ecosystem.config.cjs`: PM2 only auto-restarts on non-zero exit codes (crashes), not on clean shutdowns.
 
@@ -245,7 +259,7 @@ localSuperWhisper/
     ├── audio.rs                  # cpal audio recording + device enumeration
     ├── transcribe.rs             # HTTP client for Faster-Whisper API
     ├── db.rs                     # SQLite schema, CRUD, settings, stats
-    ├── paste.rs                  # Windows clipboard paste (Win32 API)
+    ├── paste.rs                  # Clipboard paste + window focus (Win32 / xdotool)
     ├── sounds.rs                 # Start/stop/error sound playback
     ├── state.rs                  # AppState struct (shared app state)
     └── main.rs                   # Entry point
@@ -255,7 +269,9 @@ localSuperWhisper/
 
 ## Settings
 
-All settings are persisted in SQLite at `%APPDATA%\local-super-whisper\`.
+Settings are persisted in SQLite at:
+- **Windows:** `%APPDATA%\com.localsuperwhisper.app\`
+- **Linux:** `~/.local/share/com.localsuperwhisper.app/`
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -328,9 +344,9 @@ Scrollable log of all past transcriptions with timestamp, word count, and text. 
 | `reqwest` | HTTP client for Whisper API |
 | `rusqlite` | SQLite (bundled) |
 | `arboard` | Clipboard access |
-| `enigo` | Keyboard simulation (Ctrl+V) |
-| `rodio` | Sound effects playback |
-| `windows` | `GetForegroundWindow` / `SetForegroundWindow` |
+| `enigo` | Keyboard simulation — Ctrl+V (Windows) |
+| `rodio` | Sound effects playback (Windows) |
+| `windows` | `GetForegroundWindow` / `SetForegroundWindow` (Windows only) |
 | `tokio` | Async runtime |
 
 ### Frontend
@@ -351,20 +367,23 @@ Not all keys work with `tauri-plugin-global-shortcut` on all platforms. **F-keys
 
 ---
 
-## WSL2 Development Notes
+## Platform Notes
+
+### Linux
+
+- Uses **X11** via `xdotool` for window focus capture/restore and keyboard simulation
+- Sound playback uses `aplay` (ALSA) which works with PipeWire and PulseAudio
+- **Wayland:** Window capture/restore is skipped; clipboard paste still works but can't auto-focus the target window
+- **Code editors** (VS Code, Windsurf, Antigravity): the app detects the window class and uses `Ctrl+Shift+V` instead of `Ctrl+V`
+- Runtime dependencies: `xdotool`, `xprop` (part of `x11-utils`)
+
+### WSL2
 
 The app can be developed in WSL2 via WSLg, but with limitations:
 
-- The **system tray icon does not appear** under WSLg — this is a known WSLg limitation
+- The **system tray icon does not appear** under WSLg
 - As a workaround, `src-tauri/tauri.conf.json` sets the settings window to `visible: true` for dev
-- **Before building for production**, revert the settings window visibility to `false` — on Windows native, the window is opened via the tray icon
-
-```bash
-# Dev in WSL2
-npm run tauri -- dev
-```
-
-For real-world use, build and run natively on Windows.
+- For real-world use, build and run natively on Windows or Linux desktop
 
 ---
 

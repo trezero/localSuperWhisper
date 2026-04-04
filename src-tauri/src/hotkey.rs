@@ -22,10 +22,7 @@ fn start_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
 
     // Capture the currently focused window before overlay appears
-    #[cfg(windows)]
     let target = crate::paste::capture_foreground_window();
-    #[cfg(not(windows))]
-    let target: Option<isize> = None;
     *state.target_window.lock().unwrap() = target;
 
     // Get mic device from settings
@@ -129,12 +126,9 @@ fn stop_recording(app: &AppHandle) {
             Ok(raw) if !raw.is_empty() => {
                 let text = db::apply_corrections(&raw, &corrections);
                 // Paste text into target window
-                #[cfg(windows)]
                 if let Err(e) = crate::paste::paste_text(&text, target_window) {
                     eprintln!("Paste error: {}", e);
                 }
-                #[cfg(not(windows))]
-                let _ = target_window; // suppress unused warning on Linux
 
                 // Save to history
                 let word_count = text.split_whitespace().count() as i32;

@@ -1,12 +1,13 @@
 const path = require("path");
 
 const PROJECT_ROOT = path.resolve(__dirname);
+const isWindows = process.platform === "win32";
 const EXE = path.join(
   PROJECT_ROOT,
   "src-tauri",
   "target",
   "release",
-  "local-super-whisper.exe"
+  isWindows ? "local-super-whisper.exe" : "local-super-whisper"
 );
 
 module.exports = {
