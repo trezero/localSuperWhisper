@@ -10,7 +10,7 @@ mod state;
 mod transcribe;
 
 use audio::AudioDevice;
-use db::{ChecklistStep, HistoryEntry, Stats, VocabularyEntry};
+use db::{ChecklistStep, CorrectionEntry, HistoryEntry, Stats, VocabularyEntry};
 use state::{AppState, RecordingState};
 
 use rusqlite::Connection;
@@ -79,6 +79,24 @@ fn complete_checklist_step(state: tauri::State<'_, AppState>, step_id: String) -
 }
 
 #[tauri::command]
+fn get_corrections(state: tauri::State<'_, AppState>) -> Result<Vec<CorrectionEntry>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::get_corrections(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_correction(state: tauri::State<'_, AppState>, from_text: String, to_text: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::add_correction(&conn, &from_text, &to_text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_correction(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    db::remove_correction(&conn, id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_audio_devices() -> Vec<AudioDevice> {
     audio::list_input_devices()
 }
@@ -121,6 +139,30 @@ fn register_hotkey(app: tauri::AppHandle, key: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+fn show_settings_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        // Tauri's show/unminimize/set_focus can be blocked by Windows focus-steal
+        // protection. Go straight to Win32 — SW_RESTORE handles minimized, hidden,
+        // and normal-but-behind-other-windows in a single call.
+        #[cfg(windows)]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, ShowWindow, SW_RESTORE};
+            if let Ok(hwnd) = window.hwnd() {
+                unsafe {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                    let _ = SetForegroundWindow(hwnd);
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -160,15 +202,13 @@ pub fn run() {
 
             // Create tray icon
             let _tray = TrayIconBuilder::new()
+                .icon(tauri::include_image!("icons/icon.png"))
                 .menu(&menu)
                 .tooltip("Local SuperWhisper")
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show" => {
-                            if let Some(window) = app.get_webview_window("settings") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                            show_settings_window(app);
                         }
                         "quit" => {
                             app.exit(0);
@@ -177,12 +217,8 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("settings") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        show_settings_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
@@ -262,6 +298,9 @@ pub fn run() {
             complete_checklist_step,
             get_audio_devices,
             register_hotkey,
+            get_corrections,
+            add_correction,
+            remove_correction,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

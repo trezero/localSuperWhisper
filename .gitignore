@@ -13,6 +13,9 @@ src-tauri/target/
 .DS_Store
 Thumbs.db
 
+# PM2 logs
+logs/
+
 # Environment
 .env
 .env.local
