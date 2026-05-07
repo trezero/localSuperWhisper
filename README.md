@@ -51,22 +51,31 @@ No chat UI. No "AI assistant" personality. No popup asking you to upgrade. The a
 
 ## 🚀 Quick Start (Windows)
 
-**Want to install and use it without building from source?**
+**Want to install without touching a toolchain?**
 
-1. **Build the installer** (or grab one from a release):
+1. **Grab the installer** from the [latest release](https://github.com/trezero/localSuperWhisper/releases/latest) — download `Local SuperWhisper_<version>_x64-setup.exe`.
+2. **Unblock it** (one-time, in PowerShell from the folder you downloaded to):
+
    ```powershell
-   .\build-installer.ps1
+   Unblock-File .\Local*SuperWhisper*setup.exe
    ```
-2. **Run** `Local SuperWhisper_0.1.0_x64-setup.exe`
-3. **Launch from the Start Menu** — the app drops into your system tray
-4. **First run:** set your hotkey, point it at your Whisper API, pick a mic. Done.
 
-What you get:
+   Or right-click the file → **Properties** → check **Unblock** → **OK**.
+3. **Run the installer.** UAC will say "publisher couldn't be verified" — that's expected (see below). Click **Yes**.
+4. **Launch from the Start Menu.** The app drops into your system tray.
+5. **First run:** set your hotkey, point it at your Whisper API, pick a mic. Done.
 
-- ✅ One-click install, no toolchain required
-- ✅ Auto-starts in the tray on login (optional)
+> **Why the unblock step?** Installers downloaded from the internet get tagged with a Mark-of-the-Web flag. If you double-click without removing it, Windows SmartScreen silently refuses to launch the installer — no error dialog, just nothing happens. `Unblock-File` strips the tag.
+>
+> The installer itself **is** Authenticode-signed, just with a self-signed cert that isn't in Windows' default trust store, which is why UAC says "publisher couldn't be verified." If you'll be installing many releases of this app over time and want UAC to show our verified publisher name on every install, see [Optional: trust the publishing cert](#optional-trust-the-publishing-cert) — that path adds our cert to your Trusted Root store, which is a bigger ask we don't recommend by default.
+
+**Prefer to build from source?** Skip down to [Developer Setup](#-developer-setup).
+
+What you get either way:
+
+- ✅ Runs in the tray on login (optional)
 - ✅ Start Menu shortcuts + clean uninstall via Windows Settings
-- ✅ Authenticode-signed installer (no SmartScreen scare screen if you import the cert)
+- ✅ Authenticode-signed installer (self-signed for now; commercial cert is on the roadmap)
 
 📖 Full walkthrough: [Windows Installer Guide](docs/WINDOWS_INSTALLER.md)
 
@@ -176,27 +185,21 @@ first.
 3. From now on, `npm run tauri -- build` produces signed `.exe` and `.msi`
    installers automatically.
 
-**End-user machine setup (one-time per user):**
+#### Optional: trust the publishing cert
 
-A signed installer with a self-signed cert is still rejected by SmartScreen
-unless the cert is added to that user's Trusted Root + Trusted Publisher
-stores. Distribute `signing/cert.cer` (public, safe to share) and have each
-user run, in an elevated PowerShell:
+For most users, the [Quick Start](#-quick-start-windows) `Unblock-File` flow is the right answer — it strips the Mark-of-the-Web tag that causes Windows to silently refuse to launch downloaded installers, and the install proceeds (UAC will show "publisher couldn't be verified," which is harmless). **You only need this section if you'll be installing many releases of this app over time** and want UAC to show our publisher name as verified instead of yellow-shielded on every install.
+
+Distribute `signing/cert.cer` (public, safe to share) and have each user run, in an elevated PowerShell:
 
 ```powershell
 .\signing\trust-cert.ps1
 ```
 
-After that, your signed installers run cleanly on their machine — no
-SmartScreen warning, the UAC prompt shows your verified publisher name
-instead of "Unknown publisher."
+This installs our cert into that user's **Trusted Root + Trusted Publisher** stores. After that, our signed installers run with the publisher name verified on the UAC prompt, and the unblock step is no longer necessary.
 
-> Without signing, an unsigned `.msi` or `.exe` downloaded from GitHub
-> Releases carries the Mark-of-the-Web tag (`Zone.Identifier:$DATA`) and
-> Windows silently refuses to launch it — a known cause of "I double-clicked
-> the installer and nothing happened." Signing fixes this for any machine
-> that trusts the cert; for public distribution you need a cert with broad
-> trust (commercial OV/EV) instead.
+> ⚠️ Adding a cert to Trusted Root means Windows will trust **anything** ever signed with that cert, indefinitely. That's fine for an internal team that controls the cert; for public distribution the right answer is a commercial OV/EV cert (or Azure Trusted Signing) — see [`signing/README.md`](signing/README.md).
+
+> **Background:** an unsigned `.msi` or `.exe` downloaded from GitHub Releases carries the Mark-of-the-Web tag (`Zone.Identifier:$DATA`) and Windows silently refuses to launch it — a known cause of "I double-clicked the installer and nothing happened." `Unblock-File` removes the tag for one binary; trusting the cert removes it permanently for everything signed by that cert.
 
 Full details, cert rotation, and rationale are in
 [`signing/README.md`](signing/README.md).
