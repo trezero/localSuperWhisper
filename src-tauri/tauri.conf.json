@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/schemas/master/tauri/v2/tauri.conf.json",
   "productName": "Local SuperWhisper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.localsuperwhisper.app",
   "build": {
     "beforeDevCommand": "npm run dev",
