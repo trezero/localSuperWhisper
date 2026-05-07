@@ -1,6 +1,6 @@
-# Local SuperWhisper
+# LocalSuperWhisper
 
-A lightweight desktop app for **Windows** and **Linux** that replicates the core [Superwhisper](https://superwhisper.com) workflow using a **self-hosted** Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted into whatever window you were using — no cloud, no subscription.
+A lightweight desktop app for **Windows** and **Linux** that turns voice into text using a **self-hosted** Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted into whatever window you were using — no cloud, no subscription, no per-minute fees.
 
 Built with [Tauri v2](https://tauri.app) (Rust backend) and React + TypeScript + Tailwind CSS (frontend).
 
