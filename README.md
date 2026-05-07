@@ -80,7 +80,19 @@ The app sends audio to an HTTP API that is compatible with the OpenAI audio tran
 docker run --gpus all -p 8028:8000 fedirz/faster-whisper-server:latest-cuda
 ```
 
-The default API URL in the app is `http://172.16.1.222:8028/v1` — change this in the Configuration tab to match your server.
+Set the API URL in the Configuration tab to match your server (e.g. `http://localhost:8028/v1` for a local container, or your LAN IP for a remote one).
+
+#### Recommended server configuration for low latency
+
+By default the server unloads the Whisper model after 5 minutes of idle (`WHISPER__TTL=300`) and lazy-loads it on first request — the reload alone takes ~30 s on a CUDA cold path, which makes the first dictation after a coffee break feel broken. Two env vars eliminate that:
+
+```yaml
+environment:
+  - WHISPER__TTL=-1                                                # never unload
+  - PRELOAD_MODELS=["deepdml/faster-whisper-large-v3-turbo-ct2"]   # warm at container start
+```
+
+With these set, a 3-second clip transcribes end-to-end in roughly **0.5–0.7 s over localhost** and **~0.4 s over LAN**. Only the very first request after a container restart pays a one-time ~6 s cuDNN/ctranslate2 init cost.
 
 ---
 
@@ -103,6 +115,8 @@ npm run tauri -- dev
 ```bash
 npm run tauri -- build
 ```
+
+> **Heads up:** if you ever rebuild the binary directly with `cargo build --release` (e.g. for PM2 or a CI step), you **must** pass `--features custom-protocol`. Tauri-codegen decides dev-vs-prod at compile time via that feature; without it the binary embeds empty assets and the WebView falls back to `http://localhost:1420` at runtime, producing `ERR_CONNECTION_REFUSED` in every window. `tauri build` adds the feature automatically — `cargo build` does not.
 
 Build artifacts by platform:
 

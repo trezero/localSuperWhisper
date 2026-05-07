@@ -10,6 +10,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Required for production builds — tells tauri-codegen to embed dist assets
+# instead of loading from devUrl. `tauri build` adds this automatically; plain
+# `cargo build --release` must pass `--features custom-protocol` or the binary
+# tries to reach http://localhost:1420 at runtime.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"

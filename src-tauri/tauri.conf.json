@@ -19,7 +19,7 @@
         "height": 600,
         "minWidth": 700,
         "minHeight": 500,
-        "visible": true,
+        "visible": false,
         "center": true,
         "decorations": true
       },
@@ -36,10 +36,6 @@
         "center": true
       }
     ],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false
-    },
     "security": {
       "csp": null
     }
@@ -55,6 +51,16 @@
       "icons/icon.png"
     ],
     "resources": ["sounds/*"],
+    "publisher": "Local SuperWhisper",
+    "copyright": "Copyright © 2025 Local SuperWhisper",
+    "category": "Productivity",
+    "shortDescription": "Voice-to-text dictation with local AI",
+    "longDescription": "A lightweight desktop app that replicates the Superwhisper workflow using a self-hosted Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
     "linux": {
       "deb": {
         "depends": ["libasound2", "libwebkit2gtk-4.1-0", "libgtk-3-0", "xdotool"],
