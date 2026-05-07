@@ -10,6 +10,7 @@
 #   .\manage.ps1 redeploy
 #   .\manage.ps1 status
 #   .\manage.ps1 startup
+#   .\manage.ps1 uninstall    # clean slate (PM2 + optional appdata/install)
 
 $ErrorActionPreference = "Stop"
 
@@ -167,6 +168,92 @@ function Cmd-RemoveStartup {
     }
 }
 
+function Cmd-Uninstall {
+    Header "Uninstall — Clean Slate"
+
+    $appData  = Join-Path $env:APPDATA "com.localsuperwhisper.app"
+    $nsisRoot = Join-Path $env:LOCALAPPDATA "Programs\Local SuperWhisper"
+
+    Warn "This removes the dev/PM2 deployment so the NSIS installer can be tested cleanly."
+    Write-Host ""
+    Write-Host "  This will:"
+    Write-Host "    1. Stop and delete the PM2 process for $AppName"
+    Write-Host "    2. Disable the PM2 Windows startup task (if installed)"
+    Write-Host "    3. Prompt before wiping app data ($appData)"
+    Write-Host "    4. Prompt before removing a prior NSIS install ($nsisRoot)"
+    Write-Host ""
+    $go = Read-Host "Proceed? [y/N]"
+    if ($go -notmatch '^[Yy]') { Warn "Cancelled."; return }
+
+    # 1. PM2 stop + delete + save
+    if (Check-PM2) {
+        if (PM2-Has-App) {
+            Info "Stopping and deleting PM2 entry for $AppName..."
+            try { pm2 stop   $AppName 2>$null | Out-Null } catch { }
+            try { pm2 delete $AppName 2>$null | Out-Null } catch { }
+            try { pm2 save           2>$null | Out-Null } catch { }
+            Success "PM2 process removed."
+        } else {
+            Info "PM2 has no entry for $AppName — skipping."
+        }
+    }
+
+    # 2. PM2 Windows startup task
+    if (Get-Command pm2-startup -ErrorAction SilentlyContinue) {
+        Info "Removing PM2 Windows startup task..."
+        try { pm2-startup uninstall 2>$null | Out-Null } catch { }
+        Success "Startup task removed."
+    } else {
+        Info "pm2-windows-startup not installed — skipping startup uninstall."
+    }
+
+    # 3. App data (settings DB, history, vocabulary, sounds cache)
+    Write-Host ""
+    if (Test-Path $appData) {
+        Warn "App data exists at: $appData"
+        Warn "This contains your settings DB, transcription history, and vocabulary."
+        $wipe = Read-Host "Wipe app data? [y/N]"
+        if ($wipe -match '^[Yy]') {
+            Remove-Item -Recurse -Force $appData
+            Success "App data wiped."
+        } else {
+            Info "App data preserved — the installer will reuse it on first run."
+        }
+    } else {
+        Info "No app data found at $appData."
+    }
+
+    # 4. Prior NSIS install (only present after a previous installer run)
+    Write-Host ""
+    if (Test-Path $nsisRoot) {
+        Warn "Existing NSIS install found at: $nsisRoot"
+        $uninst = Get-ChildItem $nsisRoot -Filter "uninstall.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($uninst) {
+            $run = Read-Host "Run the NSIS uninstaller? [Y/n]"
+            if ($run -notmatch '^[Nn]') {
+                Info "Launching NSIS uninstaller (interactive)..."
+                Start-Process -FilePath $uninst.FullName -Wait
+                if (Test-Path $nsisRoot) {
+                    Warn "Install directory still present — uninstaller may have been cancelled."
+                } else {
+                    Success "NSIS install removed."
+                }
+            } else {
+                Info "Skipped NSIS uninstaller. Install directory left in place."
+            }
+        } else {
+            Warn "No uninstall.exe found — removing directory directly (registry entries may persist)."
+            Remove-Item -Recurse -Force $nsisRoot
+            Success "Install directory removed."
+        }
+    } else {
+        Info "No prior NSIS install found at $nsisRoot."
+    }
+
+    Write-Host ""
+    Success "Uninstall complete. You can now run the NSIS installer for a clean test."
+}
+
 # ── menu ─────────────────────────────────────────────────────────────────────
 function Show-Menu {
     Write-Host ""
@@ -182,22 +269,24 @@ function Show-Menu {
     Write-Host "    6)  Status"                                   -ForegroundColor Cyan
     Write-Host "    7)  Enable Startup on Login"                  -ForegroundColor Cyan
     Write-Host "    8)  Disable Startup on Login"                 -ForegroundColor Cyan
+    Write-Host "    9)  Uninstall  (clean slate for installer test)" -ForegroundColor Red
     Write-Host "    0)  Exit"                                     -ForegroundColor Gray
     Write-Host ""
-    Write-Host -NoNewline "  Choose [0-8]: " -ForegroundColor White
+    Write-Host -NoNewline "  Choose [0-9]: " -ForegroundColor White
 }
 
 # ── entry point ───────────────────────────────────────────────────────────────
 $cmd = if ($args.Count -gt 0) { $args[0] } else { $null }
 
 switch ($cmd) {
-    "start"    { & Cmd-Start;        exit 0 }
-    "stop"     { & Cmd-Stop;         exit 0 }
-    "restart"  { & Cmd-Restart;      exit 0 }
-    "logs"     { & Cmd-Logs;         exit 0 }
-    "redeploy" { & Cmd-Redeploy;     exit 0 }
-    "status"   { & Cmd-Status;       exit 0 }
-    "startup"  { & Cmd-SetupStartup; exit 0 }
+    "start"     { & Cmd-Start;        exit 0 }
+    "stop"      { & Cmd-Stop;         exit 0 }
+    "restart"   { & Cmd-Restart;      exit 0 }
+    "logs"      { & Cmd-Logs;         exit 0 }
+    "redeploy"  { & Cmd-Redeploy;     exit 0 }
+    "status"    { & Cmd-Status;       exit 0 }
+    "startup"   { & Cmd-SetupStartup; exit 0 }
+    "uninstall" { & Cmd-Uninstall;    exit 0 }
 }
 
 # Interactive loop
@@ -213,6 +302,7 @@ while ($true) {
         "6" { & Cmd-Status }
         "7" { & Cmd-SetupStartup }
         "8" { & Cmd-RemoveStartup }
+        "9" { & Cmd-Uninstall }
         "0" { Write-Host "Bye." -ForegroundColor Green; exit 0 }
         default { Warn "Invalid choice." }
     }
