@@ -125,6 +125,56 @@ Build artifacts by platform:
 | Windows | `.msi` installer in `src-tauri/target/release/bundle/msi/` |
 | Linux | `.deb` and `.rpm` in `src-tauri/target/release/bundle/deb/` and `rpm/` |
 
+### Code signing (Windows)
+
+Windows installers must be Authenticode-signed or end users will hit a silent
+SmartScreen / UAC failure when they double-click — the installer process never
+launches and there is no error dialog. We sign with a **self-signed cert** for
+internal/team distribution. (For public distribution use a commercial OV/EV
+cert or Azure Trusted Signing — see [`signing/README.md`](signing/README.md).)
+
+`tauri build` reads the signing config from `src-tauri/tauri.conf.json` and
+calls `signtool` automatically — but it needs the cert in the local cert store
+first.
+
+**Build machine setup (one-time per machine):**
+
+1. Get `signing/cert.pfx` from a teammate (it is gitignored — share it via
+   1Password or a secure channel, never via the repo).
+2. Import it into your personal cert store:
+
+   ```powershell
+   .\signing\install-signing-cert.ps1
+   ```
+
+3. From now on, `npm run tauri -- build` produces signed `.exe` and `.msi`
+   installers automatically.
+
+**End-user machine setup (one-time per user):**
+
+A signed installer with a self-signed cert is still rejected by SmartScreen
+unless the cert is added to that user's Trusted Root + Trusted Publisher
+stores. Distribute `signing/cert.cer` (public, safe to share) and have each
+user run, in an elevated PowerShell:
+
+```powershell
+.\signing\trust-cert.ps1
+```
+
+After that, your signed installers run cleanly on their machine — no
+SmartScreen warning, the UAC prompt shows your verified publisher name
+instead of "Unknown publisher."
+
+> Without signing, an unsigned `.msi` or `.exe` downloaded from GitHub
+> Releases carries the Mark-of-the-Web tag (`Zone.Identifier:$DATA`) and
+> Windows silently refuses to launch it — a known cause of "I double-clicked
+> the installer and nothing happened." Signing fixes this for any machine
+> that trusts the cert; for public distribution you need a cert with broad
+> trust (commercial OV/EV) instead.
+
+Full details, cert rotation, and rationale are in
+[`signing/README.md`](signing/README.md).
+
 ### First run
 
 On first launch, the app detects that no hotkey has been configured and shows a setup screen. Click **Choose Hotkey**, press any key (F9–F12 are most reliable), and the app will save and register it immediately.

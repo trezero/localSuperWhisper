@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+builds/
 
 # Build output
 dist/
@@ -15,6 +16,13 @@ Thumbs.db
 
 # PM2 logs
 logs/
+
+# Code-signing material — never commit private keys
+*.pfx
+*.cer
+signing/*
+!signing/*.md
+!signing/*.ps1
 
 # Environment
 .env
