@@ -17,7 +17,42 @@ The app lives in the system tray and stays out of your way until you need it.
 
 ---
 
-## Prerequisites
+## 🚀 Quick Start for End Users (Windows)
+
+**Want to just install and use the app?** We provide a professional Windows installer:
+
+### Download & Install
+
+1. **Build the installer** (or download from releases):
+   ```powershell
+   .\build-installer.ps1
+   ```
+
+2. **Run the installer**: `Local SuperWhisper_0.1.0_x64-setup.exe`
+
+3. **Launch from Start Menu** or system tray
+
+4. **Configure on first run**: Set your hotkey, API endpoint, and microphone
+
+That's it! The app runs in your system tray and is ready to use.
+
+### Features
+
+- ✅ One-click installation (no dependencies required)
+- ✅ Runs in system tray on startup
+- ✅ Start Menu shortcuts
+- ✅ Easy uninstall via Windows Settings
+- ✅ Professional installer experience
+
+📖 **Full documentation**: [Windows Installer Guide](docs/WINDOWS_INSTALLER.md)
+
+---
+
+## 👨‍💻 Developer Setup
+
+The sections below are for developers who want to build, modify, or contribute to the project.
+
+### Prerequisites
 
 ### All Platforms
 
@@ -82,7 +117,9 @@ On first launch, the app detects that no hotkey has been configured and shows a 
 
 ---
 
-## Running as a Background Service (PM2)
+## Running as a Background Service (PM2) - For Developers
+
+> **Note for End Users**: If you installed via the Windows installer, you don't need PM2. The app runs automatically from the Start Menu or system tray. This section is for developers and advanced users who want process management during development.
 
 The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). This keeps it running automatically, restarts it if it crashes, and can launch it at login.
 
