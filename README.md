@@ -525,4 +525,10 @@ CREATE TABLE checklist (
 
 ## License
 
-MIT
+LocalSuperWhisper is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+**You can use it for free** for personal projects, research, education, hobby use, and noncommercial organizations (charities, public schools, public research, government, etc.).
+
+**You cannot sell it** — that includes selling copies, selling a hosted/SaaS version, or any other commercial use. Commercial use of any kind requires a separate license; please open an issue if you want to discuss one.
+
+This is a source-available license, not OSI-approved open source. The full terms (and the official URL) are in the [LICENSE](LICENSE) file.
