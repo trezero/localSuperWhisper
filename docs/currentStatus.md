@@ -1,6 +1,6 @@
 # Local SuperWhisper — Current Status
 
-Last updated: 2026-04-04 (Linux port session)
+Last updated: 2026-05-18 (single-instance fix)
 
 ---
 
@@ -180,6 +180,9 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 ### Unresolved
 - **Hotkey key compatibility**: Not all keys work with `tauri-plugin-global-shortcut` on all platforms. F-keys (F9–F12) are the most reliable. The setup screen currently accepts any key and shows an error if registration fails — user must try a different key.
 - **WSL2 tray icon**: System tray icon doesn't appear when running via WSLg. Settings window is set to `visible: true` as a workaround for dev. This needs to be reverted to `false` for production builds.
+
+### Recently Fixed
+- **Multiple zombie instances (2026-05-18)**: App would accumulate multiple `local-super-whisper.exe` processes over time (one had been running since May 14). Each new instance failed to register the hotkey (previous instance held it), then cleared `hotkey = ""` from the DB, leaving no instance with a working hotkey or tray response. Fixed by adding `tauri-plugin-single-instance` — second launches now focus the running instance and exit immediately. Users who hit this before the fix must re-enter their hotkey in the setup screen on first launch.
 
 ### Ready to work on
 - Test the Linux build on an Ubuntu 22 desktop with display (tray icon, overlay transparency, audio recording, paste)
