@@ -155,7 +155,7 @@ Build artifacts by platform:
 
 | Platform | Output |
 |----------|--------|
-| Windows | `.msi` installer in `src-tauri/target/release/bundle/msi/` |
+| Windows | `-setup.exe` installer in `src-tauri/target/release/bundle/nsis/` |
 | Linux | `.deb` and `.rpm` in `src-tauri/target/release/bundle/deb/` and `rpm/` |
 
 ### Code signing (Windows)
@@ -182,7 +182,7 @@ first.
    .\signing\install-signing-cert.ps1
    ```
 
-3. From now on, `npm run tauri -- build` produces signed `.exe` and `.msi`
+3. From now on, `npm run tauri -- build` produces the signed NSIS setup `.exe`
    installers automatically.
 
 #### Optional: trust the publishing cert

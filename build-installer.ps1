@@ -95,16 +95,8 @@ if (Test-Path $nsisPath) {
     Write-Host "  WARNING: NSIS installer not found at: $nsisPath" -ForegroundColor Yellow
 }
 
-$msiPath = "src-tauri\target\release\bundle\msi"
-if (Test-Path $msiPath) {
-    $msiInstallers = Get-ChildItem -Path $msiPath -Filter "*.msi" | Sort-Object LastWriteTime -Descending
-    foreach ($msi in $msiInstallers) {
-        $sizeMB = [math]::Round($msi.Length / 1MB, 2)
-        Write-Host "  MSI: $($msi.Name)" -ForegroundColor Green
-        Write-Host "     Location: $($msi.FullName)" -ForegroundColor Gray
-        Write-Host "     Size: $sizeMB MB" -ForegroundColor Gray
-    }
-}
+Write-Host "  Windows distribution target: NSIS only" -ForegroundColor Gray
+Write-Host "     Reason: MSI major-upgrade removal is unreliable on existing installs; NSIS matches the documented per-user install path." -ForegroundColor Gray
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
