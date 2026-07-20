@@ -40,7 +40,9 @@ pub async fn transcribe(
         .post(&url)
         .headers(headers)
         .multipart(form)
-        .timeout(std::time::Duration::from_secs(30))
+        // 120s accommodates first-request cold start on the Whisper server
+        // (cuDNN init + ctranslate2 model load to GPU after idle).
+        .timeout(std::time::Duration::from_secs(120))
         .send()
         .await
         .map_err(|e| format!("API request failed: {}", e))?;

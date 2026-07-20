@@ -139,32 +139,65 @@ fn register_hotkey(app: tauri::AppHandle, key: String) -> Result<(), String> {
 }
 
 fn show_settings_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("settings") {
-        // Tauri's show/unminimize/set_focus can be blocked by Windows focus-steal
-        // protection. Go straight to Win32 — SW_RESTORE handles minimized, hidden,
-        // and normal-but-behind-other-windows in a single call.
-        #[cfg(windows)]
-        {
-            use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, ShowWindow, SW_RESTORE};
-            if let Ok(hwnd) = window.hwnd() {
-                unsafe {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
+    let Some(window) = app.get_webview_window("settings") else {
+        eprintln!("show_settings_window: 'settings' window not found");
+        return;
+    };
+
+    // Make the webview visible *before* the Win32 focus dance — SW_RESTORE on a
+    // never-shown HWND is unreliable. show()/unminimize() are no-ops if already
+    // satisfied, so calling them defensively is fine.
+    if let Err(e) = window.show() {
+        eprintln!("show_settings_window: show() failed: {}", e);
+    }
+    let _ = window.unminimize();
+
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+        use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+            ShowWindow, SW_RESTORE, SW_SHOW,
+        };
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+
+                // Bypass focus-stealing prevention by briefly attaching to the
+                // current foreground window's input thread.
+                let foreground = GetForegroundWindow();
+                let our_thread = GetCurrentThreadId();
+                let foreground_thread = GetWindowThreadProcessId(foreground, None);
+
+                if foreground_thread != 0 && foreground_thread != our_thread {
+                    let _ = AttachThreadInput(foreground_thread, our_thread, true);
+                    let _ = BringWindowToTop(hwnd);
+                    let _ = SetForegroundWindow(hwnd);
+                    let _ = SetFocus(Some(hwnd));
+                    let _ = AttachThreadInput(foreground_thread, our_thread, false);
+                } else {
                     let _ = SetForegroundWindow(hwnd);
                 }
             }
+        } else {
+            eprintln!("show_settings_window: hwnd() unavailable");
         }
-        #[cfg(not(windows))]
-        {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window.set_focus();
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // A second launch was attempted — focus the already-running instance.
+            show_settings_window(app);
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -200,10 +233,13 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            // Create tray icon
-            let _tray = TrayIconBuilder::new()
+            // Create tray icon. show_menu_on_left_click(false) so left-click opens
+            // the window and right-click shows the context menu — standard Windows
+            // tray UX.
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(tauri::include_image!("icons/icon.png"))
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .tooltip("Local SuperWhisper")
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
@@ -217,7 +253,14 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                    // Only react to a completed left-click (button up). Right-click
+                    // is left to the platform so the context menu can render.
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         show_settings_window(tray.app_handle());
                     }
                 })

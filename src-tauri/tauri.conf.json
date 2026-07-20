@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/schemas/master/tauri/v2/tauri.conf.json",
   "productName": "Local SuperWhisper",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "identifier": "com.localsuperwhisper.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -19,7 +19,7 @@
         "height": 600,
         "minWidth": 700,
         "minHeight": 500,
-        "visible": true,
+        "visible": false,
         "center": true,
         "decorations": true
       },
@@ -36,17 +36,13 @@
         "center": true
       }
     ],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false
-    },
     "security": {
       "csp": null
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -56,11 +52,21 @@
       "icons/icon.icns"
     ],
     "resources": ["sounds/*"],
+    "publisher": "Local SuperWhisper",
+    "copyright": "Copyright © 2025 Local SuperWhisper",
+    "category": "Productivity",
+    "shortDescription": "Voice-to-text dictation with local AI",
+    "longDescription": "A lightweight desktop app that replicates the Superwhisper workflow using a self-hosted Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted.",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "frameworks": [],
       "entitlements": null,
       "exceptionDomain": ""
+    },
+    "windows": {
+      "certificateThumbprint": "64A2BBF8CE5DE6FE0F16B55B227B5151044CC4CE",
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
     },
     "linux": {
       "deb": {

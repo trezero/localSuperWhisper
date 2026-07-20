@@ -1,33 +1,101 @@
-# Local SuperWhisper
+<p align="center">
+  <img src="superWHisperTrayIcon.png" alt="LocalSuperWhisper" width="200" />
+</p>
 
-A lightweight desktop app for **Windows** and **Linux** that replicates the core [Superwhisper](https://superwhisper.com) workflow using a **self-hosted** Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted into whatever window you were using — no cloud, no subscription.
+<h1 align="center">LocalSuperWhisper</h1>
 
-Built with [Tauri v2](https://tauri.app) (Rust backend) and React + TypeScript + Tailwind CSS (frontend).
+<p align="center"><b>Hit a hotkey. Talk. Your words appear in whatever window you were just using.</b></p>
+
+<p align="center">
+  <i>Voice-to-text on your own hardware. Sub-second latency. Zero subscriptions. Zero cloud uploads of your audio.</i>
+</p>
+
+<p align="center">
+  <a href="#-quick-start-windows">Quick Start</a> ·
+  <a href="#why-this-exists">Why</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#-developer-setup">Build from source</a> ·
+  <a href="#license">License</a>
+</p>
 
 ---
 
-## How It Works
+## Why this exists
 
-1. Press your configured hotkey → recording starts, an overlay appears
-2. Speak into your microphone
-3. Press the hotkey again → audio is sent to your local Faster-Whisper API
-4. Transcribed text is pasted into the previously focused window
+Cloud dictation tools are great until you read the fine print and realize your meeting audio, your half-formed product ideas, and that voice memo you sent yourself at 1am all live on someone else's server now. The good ones cost ~$200/year. The "free" ones cost your data.
 
-The app lives in the system tray and stays out of your way until you need it.
+**LocalSuperWhisper sends nothing.** Audio never leaves your machine. You press a hotkey, dictate, and the transcribed text gets pasted into whatever window had focus — Slack, VS Code, your terminal, that PR description you've been avoiding for three days.
+
+- 🎙️ **Press → speak → press.** A 3-second clip transcribes in **~0.5s** on a warm GPU over localhost.
+- 🛜 **Fully self-hosted.** Pair it with a Faster-Whisper container on your LAN (or `localhost`). Your voice stays in your house.
+- 💸 **Free for personal & noncommercial use.** No "Pro" tier, no per-minute fees, no asterisks.
+- 🪟🐧🍎 **Windows + Linux + macOS.** One tray icon. Stays out of the way until you summon it.
+- ⚡ **Tauri v2 + Rust + React.** ~30 MB installer, low single-digit MB of RAM at idle.
+
+> "It's just a tray icon that turns my voice into text and then disappears."
+> *— the entire pitch*
 
 ---
 
-## Prerequisites
+## How it works
 
-### All Platforms
+1. Press your hotkey → a recording overlay appears
+2. Speak
+3. Press the hotkey again → audio goes to your local Faster-Whisper server
+4. Transcribed text is pasted into the window you were just using
+5. The overlay vanishes
+
+No chat UI. No "AI assistant" personality. No popup asking you to upgrade. The app lives in the system tray and stays out of your way until you call it.
+
+---
+
+## 🚀 Quick Start (Windows)
+
+**Want to install without touching a toolchain?**
+
+1. **Grab the installer** from the [latest release](https://github.com/trezero/localSuperWhisper/releases/latest) — download `Local SuperWhisper_<version>_x64-setup.exe`.
+2. **Unblock it** (one-time, in PowerShell from the folder you downloaded to):
+
+   ```powershell
+   Unblock-File .\Local*SuperWhisper*setup.exe
+   ```
+
+   Or right-click the file → **Properties** → check **Unblock** → **OK**.
+3. **Run the installer.** UAC will say "publisher couldn't be verified" — that's expected (see below). Click **Yes**.
+4. **Launch from the Start Menu.** The app drops into your system tray.
+5. **First run:** set your hotkey, point it at your Whisper API, pick a mic. Done.
+
+> **Why the unblock step?** Installers downloaded from the internet get tagged with a Mark-of-the-Web flag. If you double-click without removing it, Windows SmartScreen silently refuses to launch the installer — no error dialog, just nothing happens. `Unblock-File` strips the tag.
+>
+> The installer itself **is** Authenticode-signed, just with a self-signed cert that isn't in Windows' default trust store, which is why UAC says "publisher couldn't be verified." If you'll be installing many releases of this app over time and want UAC to show our verified publisher name on every install, see [Optional: trust the publishing cert](#optional-trust-the-publishing-cert) — that path adds our cert to your Trusted Root store, which is a bigger ask we don't recommend by default.
+
+**Prefer to build from source?** Skip down to [Developer Setup](#-developer-setup).
+
+What you get either way:
+
+- ✅ Runs in the tray on login (optional)
+- ✅ Start Menu shortcuts + clean uninstall via Windows Settings
+- ✅ Authenticode-signed installer (self-signed for now; commercial cert is on the roadmap)
+
+📖 Full walkthrough: [Windows Installer Guide](docs/WINDOWS_INSTALLER.md)
+
+> Don't have a Whisper backend yet? Skip down to [Faster-Whisper Server](#faster-whisper-server) — it's one Docker command.
+
+---
+
+## 👨‍💻 Developer Setup
+
+The sections below are for building, modifying, or contributing.
+
+### Prerequisites
+
+**All platforms:**
 
 - [Rust](https://rustup.rs) (stable toolchain)
 - [Node.js](https://nodejs.org) (v18 or later)
 - A running [Faster-Whisper](https://github.com/SYSTRAN/faster-whisper) server exposing an OpenAI-compatible `/v1/audio/transcriptions` endpoint
 
-### Linux (Ubuntu 22.04+)
-
-Install build dependencies:
+**Linux (Ubuntu 22.04+):**
 
 ```bash
 sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
@@ -39,13 +107,25 @@ Or use the manage.sh menu: option **9) Install Build Dependencies**.
 
 ### Faster-Whisper Server
 
-The app sends audio to an HTTP API that is compatible with the OpenAI audio transcription format. A popular option is [faster-whisper-server](https://github.com/fedirz/faster-whisper-server):
+The app talks to any HTTP API compatible with OpenAI's audio transcription format. The easy path is [faster-whisper-server](https://github.com/fedirz/faster-whisper-server):
 
 ```bash
 docker run --gpus all -p 8028:8000 fedirz/faster-whisper-server:latest-cuda
 ```
 
-The default API URL in the app is `http://172.16.1.222:8028/v1` — change this in the Configuration tab to match your server.
+Set the API URL in the **Configuration** tab to match (e.g. `http://localhost:8028/v1`, or your LAN IP for a remote box).
+
+#### Make it actually fast
+
+By default the server unloads the Whisper model after 5 minutes of idle (`WHISPER__TTL=300`) and lazy-loads on the next request. The reload alone is ~30s on a CUDA cold path — which makes the first dictation after a coffee break feel completely broken. Two env vars fix it:
+
+```yaml
+environment:
+  - WHISPER__TTL=-1                                                # never unload
+  - PRELOAD_MODELS=["deepdml/faster-whisper-large-v3-turbo-ct2"]   # warm at container start
+```
+
+With these set, a 3-second clip transcribes end-to-end in **~0.5–0.7s over localhost** and **~0.4s over LAN**. Only the very first request after a container restart pays a one-time ~6s cuDNN/ctranslate2 init cost.
 
 ---
 
@@ -69,22 +149,72 @@ npm run tauri -- dev
 npm run tauri -- build
 ```
 
+> **⚠️ Heads up:** if you ever rebuild the binary directly with `cargo build --release` (e.g. for PM2 or CI), you **must** pass `--features custom-protocol`. Tauri-codegen decides dev-vs-prod at compile time via that feature; without it the binary embeds empty assets and the WebView falls back to `http://localhost:1420` at runtime, producing `ERR_CONNECTION_REFUSED` in every window. `tauri build` adds the feature automatically — `cargo build` does not. This will eat hours of your life if you don't know about it.
+
 Build artifacts by platform:
 
 | Platform | Output |
 |----------|--------|
-| Windows | `.msi` installer in `src-tauri/target/release/bundle/msi/` |
+| Windows | `-setup.exe` installer in `src-tauri/target/release/bundle/nsis/` |
 | Linux | `.deb` and `.rpm` in `src-tauri/target/release/bundle/deb/` and `rpm/` |
+
+### Code signing (Windows)
+
+Windows installers must be Authenticode-signed or end users will hit a silent
+SmartScreen / UAC failure when they double-click — the installer process never
+launches and there is no error dialog. Welcome to Windows.
+
+We sign with a **self-signed cert** for internal/team distribution. (For public
+distribution use a commercial OV/EV cert or Azure Trusted Signing — see
+[`signing/README.md`](signing/README.md).)
+
+`tauri build` reads the signing config from `src-tauri/tauri.conf.json` and
+calls `signtool` automatically — but it needs the cert in the local cert store
+first.
+
+**Build machine setup (one-time per machine):**
+
+1. Get `signing/cert.pfx` from a teammate (it's gitignored — share it via
+   1Password or a secure channel, never via the repo).
+2. Import it into your personal cert store:
+
+   ```powershell
+   .\signing\install-signing-cert.ps1
+   ```
+
+3. From now on, `npm run tauri -- build` produces the signed NSIS setup `.exe`
+   installers automatically.
+
+#### Optional: trust the publishing cert
+
+For most users, the [Quick Start](#-quick-start-windows) `Unblock-File` flow is the right answer — it strips the Mark-of-the-Web tag that causes Windows to silently refuse to launch downloaded installers, and the install proceeds (UAC will show "publisher couldn't be verified," which is harmless). **You only need this section if you'll be installing many releases of this app over time** and want UAC to show our publisher name as verified instead of yellow-shielded on every install.
+
+Distribute `signing/cert.cer` (public, safe to share) and have each user run, in an elevated PowerShell:
+
+```powershell
+.\signing\trust-cert.ps1
+```
+
+This installs our cert into that user's **Trusted Root + Trusted Publisher** stores. After that, our signed installers run with the publisher name verified on the UAC prompt, and the unblock step is no longer necessary.
+
+> ⚠️ Adding a cert to Trusted Root means Windows will trust **anything** ever signed with that cert, indefinitely. That's fine for an internal team that controls the cert; for public distribution the right answer is a commercial OV/EV cert (or Azure Trusted Signing) — see [`signing/README.md`](signing/README.md).
+
+> **Background:** an unsigned `.msi` or `.exe` downloaded from GitHub Releases carries the Mark-of-the-Web tag (`Zone.Identifier:$DATA`) and Windows silently refuses to launch it — a known cause of "I double-clicked the installer and nothing happened." `Unblock-File` removes the tag for one binary; trusting the cert removes it permanently for everything signed by that cert.
+
+Full details, cert rotation, and rationale are in
+[`signing/README.md`](signing/README.md).
 
 ### First run
 
-On first launch, the app detects that no hotkey has been configured and shows a setup screen. Click **Choose Hotkey**, press any key (F9–F12 are most reliable), and the app will save and register it immediately.
+On first launch the app detects that no hotkey has been configured and shows a setup screen. Click **Choose Hotkey**, press any key (F9–F12 are the most reliable), and the app saves and registers it immediately.
 
 ---
 
 ## Running as a Background Service (PM2)
 
-The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). This keeps it running automatically, restarts it if it crashes, and can launch it at login.
+> **Note for end users:** if you installed via the Windows installer, you don't need PM2. The app runs from the Start Menu or tray. This section is for developers and advanced users who want process management during development.
+
+The app can be managed as a persistent background process using [PM2](https://pm2.keymetrics.io). It keeps things running, restarts on crash, and can launch at login.
 
 ### 1. Install PM2
 
@@ -100,7 +230,7 @@ Build the app and start it under PM2 in one step:
 ./manage.sh redeploy
 ```
 
-This runs the full Rust + frontend build and registers the process with PM2.
+Runs the full Rust + frontend build and registers the process with PM2.
 
 ### 3. Enable startup on login
 
@@ -108,16 +238,16 @@ This runs the full Rust + frontend build and registers the process with PM2.
 ./manage.sh startup
 ```
 
-- **Windows:** Saves the PM2 process list and installs a Task Scheduler entry via `pm2-windows-startup`.
-- **Linux:** Creates a `.desktop` autostart entry in `~/.config/autostart/`.
+- **Windows:** saves the PM2 process list and installs a Task Scheduler entry via `pm2-windows-startup`.
+- **Linux:** creates a `.desktop` autostart entry in `~/.config/autostart/`.
 
-> **Note:** Run `./manage.sh startup` again any time you add or remove processes from PM2 to update the saved list.
+> Run `./manage.sh startup` again any time you add or remove processes from PM2 to refresh the saved list.
 
 ---
 
 ## manage.sh — Process Manager CLI
 
-`manage.sh` is an interactive shell tool for managing the app's lifecycle. Run it with no arguments for a menu, or pass a command directly.
+Interactive shell tool for managing the app's lifecycle. Run it with no arguments for a menu, or pass a command directly.
 
 ```
 Usage: ./manage.sh [command]
@@ -163,18 +293,16 @@ Commands:
 | User closes via tray icon | **Not** restarted — intentional exit is respected |
 | Login (Windows/Linux) | PM2 resurrects the saved process list |
 
-This is controlled by `stop_exit_codes: [0]` in `ecosystem.config.cjs`: PM2 only auto-restarts on non-zero exit codes (crashes), not on clean shutdowns.
+Controlled by `stop_exit_codes: [0]` in `ecosystem.config.cjs`: PM2 only auto-restarts on non-zero exit codes (crashes), not on clean shutdowns.
 
 ### Log files
-
-Crash logs and stderr output are written to:
 
 ```
 logs/app-err.log
 logs/app-out.log
 ```
 
-The `logs/` directory is git-ignored. You can also view live logs with `./manage.sh logs` or `pm2 logs localSuperWhisper`.
+The `logs/` directory is git-ignored. View live logs with `./manage.sh logs` or `pm2 logs localSuperWhisper`.
 
 ---
 
@@ -298,7 +426,7 @@ Custom word list. Terms are injected into Whisper's `initial_prompt` parameter a
 - **Microphone** — select from detected input devices
 
 ### History
-Scrollable log of all past transcriptions with timestamp, word count, and text. Capped at 500 entries (oldest are automatically removed). Click an entry to copy it.
+Scrollable log of past transcriptions with timestamp, word count, and text. Capped at 500 entries (oldest are automatically removed). Click an entry to copy it.
 
 ---
 
@@ -363,7 +491,7 @@ Scrollable log of all past transcriptions with timestamp, word count, and text. 
 
 ## Hotkey Compatibility
 
-Not all keys work with `tauri-plugin-global-shortcut` on all platforms. **F-keys (F9–F12) are the most reliable choice.** Modifier-only keys (Alt, Ctrl, Shift alone) are not supported and will fail registration. If a key fails, the setup screen will display an error and let you try again.
+Not all keys work with `tauri-plugin-global-shortcut` on every platform. **F-keys (F9–F12) are the most reliable choice.** Modifier-only keys (Alt, Ctrl, Shift alone) are not supported and will fail registration. If a key fails, the setup screen surfaces the error and lets you try again.
 
 ---
 
@@ -372,14 +500,14 @@ Not all keys work with `tauri-plugin-global-shortcut` on all platforms. **F-keys
 ### Linux
 
 - Uses **X11** via `xdotool` for window focus capture/restore and keyboard simulation
-- Sound playback uses `aplay` (ALSA) which works with PipeWire and PulseAudio
-- **Wayland:** Window capture/restore is skipped; clipboard paste still works but can't auto-focus the target window
+- Sound playback uses `aplay` (ALSA), which works with PipeWire and PulseAudio
+- **Wayland:** window capture/restore is skipped; clipboard paste still works but can't auto-focus the target window
 - **Code editors** (VS Code, Windsurf, Antigravity): the app detects the window class and uses `Ctrl+Shift+V` instead of `Ctrl+V`
 - Runtime dependencies: `xdotool`, `xprop` (part of `x11-utils`)
 
 ### WSL2
 
-The app can be developed in WSL2 via WSLg, but with limitations:
+The app can be developed in WSL2 via WSLg, with caveats:
 
 - The **system tray icon does not appear** under WSLg
 - As a workaround, `src-tauri/tauri.conf.json` sets the settings window to `visible: true` for dev
@@ -424,4 +552,16 @@ CREATE TABLE checklist (
 
 ## License
 
-MIT
+LocalSuperWhisper is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+**You can use it for free** for personal projects, research, education, hobby use, and noncommercial organizations (charities, public schools, public research, government, etc.).
+
+**You cannot sell it** — that includes selling copies, selling a hosted/SaaS version, or any other commercial use. Commercial use of any kind requires a separate license; please open an issue if you want to discuss one.
+
+This is a source-available license, not OSI-approved open source. The full terms (and the official URL) are in the [LICENSE](LICENSE) file.
+
+---
+
+<p align="center">
+  <i>Built because dictation should belong to you, not to a billing dashboard.</i>
+</p>
