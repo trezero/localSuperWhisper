@@ -52,9 +52,16 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.icns"
     ],
     "resources": ["sounds/*"],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "frameworks": [],
+      "entitlements": null,
+      "exceptionDomain": ""
+    },
     "linux": {
       "deb": {
         "depends": ["libasound2", "libwebkit2gtk-4.1-0", "libgtk-3-0", "xdotool"],

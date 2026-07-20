@@ -16,6 +16,10 @@ case "$OS" in
     PLATFORM="linux"
     EXE="$SCRIPT_DIR/src-tauri/target/release/local-super-whisper"
     ;;
+  Darwin*)
+    PLATFORM="macos"
+    EXE="$SCRIPT_DIR/src-tauri/target/release/bundle/macos/Local SuperWhisper.app/Contents/MacOS/Local SuperWhisper"
+    ;;
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     PLATFORM="windows"
     EXE="$SCRIPT_DIR/src-tauri/target/release/local-super-whisper.exe"
@@ -145,6 +149,31 @@ StartupNotify=false
 X-GNOME-Autostart-enabled=true
 EOF
     success "Autostart enabled. App will launch on next login."
+  elif [[ "$PLATFORM" == "macos" ]]; then
+    header "Configure macOS Autostart (LaunchAgent)"
+    PLIST_DIR="$HOME/Library/LaunchAgents"
+    PLIST="$PLIST_DIR/com.localsuperwhisper.app.plist"
+    mkdir -p "$PLIST_DIR"
+    cat > "$PLIST" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.localsuperwhisper.app</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>open</string>
+        <string>-a</string>
+        <string>$SCRIPT_DIR/src-tauri/target/release/bundle/macos/Local SuperWhisper.app</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+EOF
+    success "LaunchAgent installed at $PLIST"
+    success "App will launch on next login."
   else
     header "Configure Windows Startup"
     check_pm2
@@ -167,6 +196,16 @@ cmd_remove_startup() {
     header "Remove Linux Autostart"
     rm -f "$HOME/.config/autostart/local-super-whisper.desktop"
     success "Autostart disabled."
+  elif [[ "$PLATFORM" == "macos" ]]; then
+    header "Remove macOS Autostart"
+    PLIST="$HOME/Library/LaunchAgents/com.localsuperwhisper.app.plist"
+    if [[ -f "$PLIST" ]]; then
+      launchctl unload "$PLIST" 2>/dev/null || true
+      rm -f "$PLIST"
+      success "LaunchAgent removed. Autostart disabled."
+    else
+      warn "No LaunchAgent found — nothing to remove."
+    fi
   else
     header "Remove Windows Startup"
     check_pm2
@@ -178,10 +217,21 @@ cmd_remove_startup() {
   fi
 }
 
-cmd_install_linux_deps() {
+cmd_install_deps() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    header "Install macOS Build Dependencies"
+    if ! command -v brew &>/dev/null; then
+      error "Homebrew not found. Install it from https://brew.sh"
+      return
+    fi
+    info "Installing dependencies via Homebrew…"
+    brew install rustup node 2>/dev/null || true
+    success "Dependencies installed. Make sure Xcode Command Line Tools are installed: xcode-select --install"
+    return
+  fi
   header "Install Linux Build Dependencies"
   if [[ "$PLATFORM" != "linux" ]]; then
-    warn "This option is only available on Linux."
+    warn "This option is only available on Linux and macOS."
     return
   fi
   info "This requires sudo access."
@@ -209,7 +259,7 @@ show_menu() {
   echo -e "  ${CYAN}6)${RESET} Status"
   echo -e "  ${CYAN}7)${RESET} Enable Startup on Login"
   echo -e "  ${CYAN}8)${RESET} Disable Startup on Login"
-  echo -e "  ${CYAN}9)${RESET} Install Build Dependencies  ${YELLOW}[Linux only]${RESET}"
+  echo -e "  ${CYAN}9)${RESET} Install Build Dependencies  ${YELLOW}[Linux/macOS]${RESET}"
   echo -e "  ${CYAN}0)${RESET} Exit"
   echo ""
   echo -n -e "${BOLD}Choose [0-9]:${RESET} "
@@ -241,7 +291,7 @@ while true; do
     6) cmd_status ;;
     7) cmd_setup_startup ;;
     8) cmd_remove_startup ;;
-    9) cmd_install_linux_deps ;;
+    9) cmd_install_deps ;;
     0) echo "Bye."; exit 0 ;;
     *) warn "Invalid choice." ;;
   esac

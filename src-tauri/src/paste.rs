@@ -40,6 +40,24 @@ pub fn capture_foreground_window() -> Option<isize> {
         .ok()
 }
 
+#[cfg(target_os = "macos")]
+pub fn capture_foreground_window() -> Option<isize> {
+    // Get the PID of the frontmost application via AppleScript
+    let output = std::process::Command::new("osascript")
+        .args(["-e", "tell application \"System Events\" to get unix id of first process whose frontmost is true"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<isize>()
+        .ok()
+}
+
 /// Apps that use Ctrl+Shift+V for paste instead of Ctrl+V
 #[cfg(target_os = "linux")]
 const CTRL_SHIFT_V_APPS: &[&str] = &["code", "windsurf", "antigravity"];
@@ -108,8 +126,35 @@ pub fn paste_text(text: &str, target_window: Option<isize>) -> Result<(), String
         }
     }
 
-    // Simulate Ctrl+V on Windows/macOS
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        // Restore focus to the target app by PID
+        if let Some(pid) = target_window {
+            let script = format!(
+                "tell application \"System Events\" to set frontmost of first process whose unix id is {} to true",
+                pid
+            );
+            let _ = std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .status();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // Simulate Cmd+V (macOS paste)
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Enigo error: {}", e))?;
+        enigo
+            .key(Key::Meta, Direction::Press)
+            .map_err(|e| format!("Key press error: {}", e))?;
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| format!("Key click error: {}", e))?;
+        enigo
+            .key(Key::Meta, Direction::Release)
+            .map_err(|e| format!("Key release error: {}", e))?;
+    }
+
+    // Simulate Ctrl+V on Windows
+    #[cfg(windows)]
     {
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Enigo error: {}", e))?;
         enigo

@@ -1,6 +1,6 @@
 # Local SuperWhisper — Current Status
 
-Last updated: 2026-04-04 (Linux port session)
+Last updated: 2026-04-04 (macOS port session)
 
 ---
 
@@ -175,6 +175,37 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 ---
 
+## macOS Support (added 2026-04-04)
+
+The app now builds and runs on macOS (Apple Silicon and Intel) in addition to Windows 10 and Linux.
+
+### What was done
+- **paste.rs**: Added `#[cfg(target_os = "macos")]` implementation of `capture_foreground_window()` using AppleScript (`osascript`) to get the frontmost app's PID. Added macOS-specific window restore via AppleScript and paste simulation using `Cmd+V` (`Key::Meta`) instead of `Ctrl+V`.
+- **sounds.rs**: macOS uses `afplay` (built-in) for sound playback instead of `rodio`, matching the Linux approach of using native CLI audio tools for reliability.
+- **tauri.conf.json**: Added `macOS` bundle section (`minimumSystemVersion: "10.15"`). Added `icon.icns` to bundle icon list.
+- **icons/icon.icns**: Generated from existing `icon.png` via `sips`/`iconutil`.
+- **manage.sh**: Added `Darwin` platform detection, macOS autostart via LaunchAgent (`~/Library/LaunchAgents/`), and macOS build dependencies option (Homebrew).
+
+### macOS build requirements
+- Xcode Command Line Tools: `xcode-select --install`
+- Rust: `rustup` (not Homebrew `rust` — ensure `~/.cargo/bin` is in PATH)
+- Node.js
+
+### macOS accessibility permissions
+- **Required**: macOS requires Accessibility permissions for `enigo` to simulate Cmd+V paste. On first run, the OS will prompt to grant access in System Settings > Privacy & Security > Accessibility.
+- Without this permission, transcription will succeed but auto-paste into the target window will fail silently.
+
+### macOS build artifacts
+- `.app` bundle: `src-tauri/target/release/bundle/macos/Local SuperWhisper.app`
+- `.dmg` installer: `src-tauri/target/release/bundle/dmg/Local SuperWhisper_0.1.0_aarch64.dmg` (or `x64`)
+
+### macOS known limitations
+- **Accessibility permissions**: Must be granted manually for paste simulation to work
+- **Modifier-only hotkeys**: Not supported (same as other platforms — use F9–F12)
+- **Rust toolchain**: Must use `rustup`-managed Rust (1.88+), not Homebrew `rust` which may be too old
+
+---
+
 ## Known Issues / Next Steps
 
 ### Unresolved
@@ -182,8 +213,9 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 - **WSL2 tray icon**: System tray icon doesn't appear when running via WSLg. Settings window is set to `visible: true` as a workaround for dev. This needs to be reverted to `false` for production builds.
 
 ### Ready to work on
+- Test macOS build: tray icon, overlay, audio recording, paste with accessibility permissions
 - Test the Linux build on an Ubuntu 22 desktop with display (tray icon, overlay transparency, audio recording, paste)
-- Test on Windows native to confirm no regressions from the Linux port
+- Test on Windows native to confirm no regressions from the Linux/macOS ports
 - Revert `settings` window `visible` to `false` before building for production
 - Complete the onboarding checklist UX (checklist steps aren't being auto-completed yet)
 - The `customize_shortcuts` checklist step should auto-complete after the user sets a hotkey in Setup
@@ -198,6 +230,14 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 3. `npm install`
 4. `npm run tauri -- dev`    ← dev mode with hot reload
 5. `npm run tauri -- build`  ← produces binary + `.deb` + `.rpm` in `src-tauri/target/release/bundle/`
+
+### macOS
+1. Install Xcode Command Line Tools: `xcode-select --install`
+2. Install [Rust](https://rustup.rs) and Node.js (ensure `~/.cargo/bin` is in PATH)
+3. `npm install`
+4. `npm run tauri -- dev`    ← dev mode with hot reload
+5. `npm run tauri -- build`  ← produces `.app` + `.dmg` in `src-tauri/target/release/bundle/`
+6. Grant Accessibility permissions when prompted (required for paste simulation)
 
 ### Windows native
 1. Install [Rust](https://rustup.rs) and Node.js on Windows

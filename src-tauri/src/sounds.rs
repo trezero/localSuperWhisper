@@ -6,6 +6,7 @@ struct SoundData {
     error: SoundSource,
 }
 
+#[allow(dead_code)]
 enum SoundSource {
     File(std::path::PathBuf),
     Bytes(Vec<u8>),
@@ -22,14 +23,14 @@ pub fn init_sounds(resource_dir: std::path::PathBuf) {
             return SoundSource::Empty;
         }
 
-        // On Linux, use aplay for reliable PipeWire/PulseAudio/ALSA playback
-        #[cfg(target_os = "linux")]
+        // On Linux, use aplay; on macOS, use afplay — more reliable than rodio
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             return SoundSource::File(path);
         }
 
-        // On other platforms, load bytes for rodio
-        #[cfg(not(target_os = "linux"))]
+        // On Windows, load bytes for rodio
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         match std::fs::read(&path) {
             Ok(bytes) => SoundSource::Bytes(bytes),
             Err(e) => {
@@ -52,8 +53,13 @@ fn play_sound(source: &SoundSource) {
         SoundSource::File(path) => {
             let path = path.clone();
             std::thread::spawn(move || {
+                #[cfg(target_os = "linux")]
                 let _ = std::process::Command::new("aplay")
                     .arg("-q")
+                    .arg(&path)
+                    .status();
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("afplay")
                     .arg(&path)
                     .status();
             });
