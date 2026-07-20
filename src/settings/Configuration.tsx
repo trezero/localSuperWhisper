@@ -17,6 +17,15 @@ function displayKey(code: string): string {
   return names[code] || code;
 }
 
+interface MicStats {
+  device_name: string;
+  sample_rate: number;
+  channels: number;
+  peak: number;
+  rms: number;
+  too_quiet: boolean;
+}
+
 interface AudioDevice {
   name: string;
   is_default: boolean;
@@ -29,6 +38,26 @@ export default function Configuration() {
   const [listeningForHotkey, setListeningForHotkey] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const hotkeyListenerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micResult, setMicResult] = useState<MicStats | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const runMicTest = async () => {
+    setMicTesting(true);
+    setMicError(null);
+    setMicResult(null);
+    try {
+      setMicResult(
+        await invoke<MicStats>("test_microphone", {
+          device: settings.mic_device || "default",
+        })
+      );
+    } catch (e) {
+      setMicError(String(e));
+    } finally {
+      setMicTesting(false);
+    }
+  };
 
   const loadSettings = useCallback(async () => {
     const pairs = await invoke<[string, string][]>("get_settings");
@@ -170,6 +199,35 @@ export default function Configuration() {
             </option>
           ))}
         </select>
+
+        {/* A muted mic looks identical to a working one until you measure it,
+            and the symptom is a hallucinated transcription, not an error. */}
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={runMicTest}
+            disabled={micTesting}
+            className="py-1.5 px-3 bg-surface-dark border border-white/15 rounded-md text-xs text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          >
+            {micTesting ? "Listening… speak now" : "Test microphone"}
+          </button>
+          {micResult && (
+            <span
+              className={`text-xs ${micResult.too_quiet ? "text-red-400" : "text-green-400"}`}
+            >
+              {micResult.too_quiet
+                ? `Too quiet (level ${micResult.peak.toFixed(3)}) — muted or gain down?`
+                : `Working — level ${micResult.peak.toFixed(3)}`}
+            </span>
+          )}
+          {micError && <span className="text-xs text-red-400">{micError}</span>}
+        </div>
+        {micResult && (
+          <p className="text-text-muted text-[11px] mt-1">
+            {micResult.device_name} · {micResult.channels} ch @ {micResult.sample_rate} Hz
+            {micResult.too_quiet &&
+              " · anything below 0.010 is rejected before transcribing, so it cannot come back as a hallucination"}
+          </p>
+        )}
       </Field>
     </div>
   );

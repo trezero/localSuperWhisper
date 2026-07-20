@@ -101,6 +101,19 @@ fn get_audio_devices() -> Vec<AudioDevice> {
     audio::list_input_devices()
 }
 
+/// Record for a couple of seconds and report the level actually captured.
+///
+/// A muted or turned-down microphone is indistinguishable from a working one
+/// until you look at the samples, and the consequence is a hallucinated
+/// transcription rather than an error. This makes that visible on demand.
+#[tauri::command]
+async fn test_microphone(device: Option<String>) -> Result<audio::MicStats, String> {
+    let device = device.unwrap_or_else(|| "default".to_string());
+    tauri::async_runtime::spawn_blocking(move || audio::probe_input_stats(&device, 2000))
+        .await
+        .map_err(|e| format!("Microphone test failed: {}", e))?
+}
+
 #[tauri::command]
 fn register_hotkey(app: tauri::AppHandle, key: String) -> Result<(), String> {
     // Stop any existing Win32 raw hotkey thread first
@@ -341,6 +354,7 @@ pub fn run() {
             get_checklist,
             complete_checklist_step,
             get_audio_devices,
+            test_microphone,
             register_hotkey,
             get_corrections,
             add_correction,

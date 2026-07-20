@@ -70,6 +70,36 @@ fn start_recording(app: &AppHandle) {
     });
 }
 
+/// Append one line per recording to `recordings.log` in the app data directory.
+///
+/// A recording that captured nothing looks identical to one that captured
+/// speech once the audio is discarded, so without this a report of "it started
+/// hallucinating" cannot be told apart from "the mic was muted" after the fact.
+fn log_recording(app: &AppHandle, duration_ms: u64, peak: f32) {
+    use std::io::Write;
+
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("recordings.log"))
+        .and_then(|mut f| {
+            writeln!(
+                f,
+                "epoch={} duration_ms={} peak={:.5} silent={}",
+                secs,
+                duration_ms,
+                peak,
+                peak < crate::audio::SILENCE_PEAK_THRESHOLD
+            )
+        });
+}
+
 fn stop_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
 
@@ -80,21 +110,38 @@ fn stop_recording(app: &AppHandle) {
     };
 
     sounds::play_stop();
+    log_recording(app, duration_ms, peak);
 
-    // Pure silence means the OS gave us zero-filled buffers rather than audio —
-    // typically a withheld microphone grant, which does not fail the stream
-    // open. Sending this to Whisper produces a confident hallucination ("Thank
-    // you." is the usual one), so stop here and say what is actually wrong.
-    if duration_ms >= 500 && peak == 0.0 {
-        eprintln!("Captured {}ms of pure silence — refusing to transcribe", duration_ms);
+    // Audio this quiet contains no speech. Sending it to Whisper does not fail —
+    // it returns a confident, usually repeated hallucination ("Thank you." or
+    // "I'll see you next time."), which is far worse than an error because it
+    // looks like a real result. Exact zero means the OS withheld the microphone;
+    // a small nonzero floor means the mic is live but muted or turned down.
+    if duration_ms >= 500 && peak < crate::audio::SILENCE_PEAK_THRESHOLD {
+        eprintln!(
+            "Captured {}ms at peak {:.5} (threshold {:.2}) — refusing to transcribe",
+            duration_ms, peak, crate::audio::SILENCE_PEAK_THRESHOLD
+        );
         sounds::play_error();
         *state.recording_state.lock().unwrap() = RecordingState::Idle;
-        let message = if cfg!(target_os = "macos") {
-            "No audio was captured. Grant microphone access in System Settings > \
-             Privacy & Security > Microphone, then try again."
+        let message = if peak == 0.0 {
+            if cfg!(target_os = "macos") {
+                "No audio at all was captured. Grant microphone access in System \
+                 Settings > Privacy & Security > Microphone, then try again."
+                    .to_string()
+            } else {
+                "No audio at all was captured. Check that the selected microphone is \
+                 connected and not muted."
+                    .to_string()
+            }
         } else {
-            "No audio was captured. Check that the selected microphone is connected \
-             and not muted."
+            format!(
+                "That recording was almost silent (level {:.3}), so there was nothing \
+                 to transcribe. Check that the microphone is not muted — on a Yeti the \
+                 mute button makes the light flash — and that its gain is turned up. \
+                 You can verify with \"Test microphone\" in Configuration.",
+                peak
+            )
         };
         let _ = app.emit("recording-error", message);
 
