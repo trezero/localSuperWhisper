@@ -40,6 +40,24 @@ pub fn capture_foreground_window() -> Option<isize> {
         .ok()
 }
 
+#[cfg(target_os = "macos")]
+pub fn capture_foreground_window() -> Option<isize> {
+    // Get the PID of the frontmost application via AppleScript
+    let output = std::process::Command::new("osascript")
+        .args(["-e", "tell application \"System Events\" to get unix id of first process whose frontmost is true"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<isize>()
+        .ok()
+}
+
 /// Apps that use Ctrl+Shift+V for paste instead of Ctrl+V
 #[cfg(target_os = "linux")]
 const CTRL_SHIFT_V_APPS: &[&str] = &["code", "windsurf", "antigravity"];
@@ -108,8 +126,86 @@ pub fn paste_text(text: &str, target_window: Option<isize>) -> Result<(), String
         }
     }
 
-    // Simulate Ctrl+V on Windows/macOS
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        // Bail out before posting events that macOS would silently discard.
+        // Without Accessibility, CGEventPost succeeds and returns no error, the
+        // keystroke simply never arrives — which looks exactly like "paste is
+        // broken" even though the clipboard was set correctly.
+        if !crate::permissions::accessibility_trusted() {
+            return Err(
+                "macOS is not allowing this app to press Cmd+V. The text is on your \
+                 clipboard — press Cmd+V to paste it. To fix this permanently, open \
+                 System Settings > Privacy & Security > Accessibility. If Local \
+                 SuperWhisper is already ticked there, remove it with the minus \
+                 button and add it back: macOS ties the permission to one exact \
+                 build, so installing a new version silently invalidates it."
+                    .into(),
+            );
+        }
+
+        // Restore focus to the target app by PID.
+        //
+        // This must be checked, not fired and forgotten. If it fails, focus
+        // stays on our own overlay and the Cmd+V below is delivered to us
+        // instead of the user's text box — a paste that reports success and
+        // does nothing. The usual cause is a stale Automation grant, which is
+        // pinned per-build for an unsigned app and is a *separate* permission
+        // from Accessibility, so refreshing one does not refresh the other.
+        if let Some(pid) = target_window {
+            let script = format!(
+                "tell application \"System Events\" to set frontmost of first process whose unix id is {} to true",
+                pid
+            );
+            let output = std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .output()
+                .map_err(|e| format!("Could not run osascript: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "macOS is not allowing this app to switch focus back to where you \
+                     were typing, so pasting would go to the wrong place. The text is \
+                     on your clipboard — press Cmd+V to paste it. To fix: System \
+                     Settings > Privacy & Security > Automation > Local SuperWhisper, \
+                     and enable System Events. This is separate from Accessibility, and \
+                     it lapses whenever a new build is installed. ({})",
+                    stderr.trim()
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // Simulate Cmd+V (macOS paste).
+        //
+        // Use the raw virtual keycode rather than Key::Unicode('v'). enigo maps
+        // Key::Unicode through get_layoutdependent_keycode(), which brute-forces
+        // keycodes 0..128 through the Carbon/HIToolbox Text Input Source APIs
+        // (TISCopyCurrentKeyboardInputSource / TISGetInputSourceProperty). Those
+        // assert they are on the main dispatch queue, and paste_text() runs on a
+        // tokio worker — so that path SIGTRAPs the moment a transcription lands.
+        // Key::Other is a straight cast to CGKeyCode and touches no TSM API.
+        //
+        // kVK_ANSI_V is also the *correct* choice for a Cmd shortcut: macOS
+        // resolves Cmd-key shortcuts by physical key position (cf. Apple's
+        // "Dvorak - QWERTY ⌘" layout), which is what this constant encodes.
+        const KVK_ANSI_V: u32 = 0x09;
+
+        let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Enigo error: {}", e))?;
+        enigo
+            .key(Key::Meta, Direction::Press)
+            .map_err(|e| format!("Key press error: {}", e))?;
+        let click = enigo.key(Key::Other(KVK_ANSI_V), Direction::Click);
+        // Release Cmd even if the click failed, or the modifier stays stuck down
+        // system-wide.
+        let release = enigo.key(Key::Meta, Direction::Release);
+        click.map_err(|e| format!("Key click error: {}", e))?;
+        release.map_err(|e| format!("Key release error: {}", e))?;
+    }
+
+    // Simulate Ctrl+V on Windows
+    #[cfg(windows)]
     {
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Enigo error: {}", e))?;
         enigo

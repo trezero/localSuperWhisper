@@ -10,7 +10,15 @@ export default function Overlay() {
   const [resultText, setResultText] = useState("");
   const [errorText, setErrorText] = useState("");
 
-  useTauriEvent("recording-started", useCallback(() => setState("recording"), []));
+  const [pasteWarning, setPasteWarning] = useState("");
+
+  useTauriEvent("recording-started", useCallback(() => {
+    setPasteWarning("");
+    setState("recording");
+  }, []));
+  // The transcription still succeeded and is on the clipboard, so this is shown
+  // alongside the result rather than replacing it with an error.
+  useTauriEvent<string>("paste-error", useCallback((msg: string) => setPasteWarning(msg), []));
   useTauriEvent("recording-transcribing", useCallback(() => setState("transcribing"), []));
   useTauriEvent<string>("recording-result", useCallback((text: string) => {
     setResultText(text);
@@ -43,7 +51,16 @@ export default function Overlay() {
           </div>
         )}
 
-        {state === "result" && <TranscriptDisplay text={resultText} />}
+        {state === "result" && (
+          <>
+            <TranscriptDisplay text={resultText} />
+            {pasteWarning && (
+              <p className="text-yellow-400 text-[11px] leading-snug mt-2 pt-2 border-t border-white/10">
+                {pasteWarning}
+              </p>
+            )}
+          </>
+        )}
 
         {state === "error" && (
           <div className="text-center py-2">

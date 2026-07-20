@@ -2,6 +2,7 @@ mod audio;
 mod db;
 mod hotkey;
 mod paste;
+mod permissions;
 #[cfg(windows)]
 mod win32_hotkey;
 mod sounds;
@@ -98,6 +99,19 @@ fn remove_correction(state: tauri::State<'_, AppState>, id: i64) -> Result<(), S
 #[tauri::command]
 fn get_audio_devices() -> Vec<AudioDevice> {
     audio::list_input_devices()
+}
+
+/// Record for a couple of seconds and report the level actually captured.
+///
+/// A muted or turned-down microphone is indistinguishable from a working one
+/// until you look at the samples, and the consequence is a hallucinated
+/// transcription rather than an error. This makes that visible on demand.
+#[tauri::command]
+async fn test_microphone(device: Option<String>) -> Result<audio::MicStats, String> {
+    let device = device.unwrap_or_else(|| "default".to_string());
+    tauri::async_runtime::spawn_blocking(move || audio::probe_input_stats(&device, 2000))
+        .await
+        .map_err(|e| format!("Microphone test failed: {}", e))?
 }
 
 #[tauri::command]
@@ -340,10 +354,14 @@ pub fn run() {
             get_checklist,
             complete_checklist_step,
             get_audio_devices,
+            test_microphone,
             register_hotkey,
             get_corrections,
             add_correction,
             remove_correction,
+            permissions::check_permissions,
+            permissions::open_permission_settings,
+            permissions::reset_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

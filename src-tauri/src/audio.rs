@@ -69,6 +69,116 @@ pub fn list_input_devices() -> Vec<AudioDevice> {
         .unwrap_or_default()
 }
 
+pub fn compute_peak(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
+}
+
+/// Below this peak, a recording contains no speech worth sending.
+///
+/// Measured references on real hardware: a Yeti capturing speech from a speaker
+/// a metre away peaks at 0.63 (rms 0.078); an idle mic in a quiet room peaks
+/// around 0.009. Speech an order of magnitude below that floor is not speech.
+/// A muted-but-live microphone is the usual cause and does not read as exactly
+/// zero, which is why a bare `== 0.0` check misses it — and sending it onward
+/// makes Whisper emit a confident, repeated hallucination.
+pub const SILENCE_PEAK_THRESHOLD: f32 = 0.01;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct MicStats {
+    pub device_name: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub peak: f32,
+    pub rms: f32,
+    /// True when this level would be rejected before transcription.
+    pub too_quiet: bool,
+}
+
+/// Record briefly and report what the microphone is actually producing.
+pub fn probe_input_stats(device_name: &str, millis: u64) -> Result<MicStats, String> {
+    let device = get_device_by_name(device_name)
+        .ok_or_else(|| format!("Audio device not found: {}", device_name))?;
+    let default = device.default_input_config().map_err(|e| e.to_string())?;
+    let channels = default.channels();
+    let sample_rate = default.sample_rate().0;
+    let config = StreamConfig {
+        channels,
+        sample_rate: SampleRate(sample_rate),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let sink = Arc::clone(&buffer);
+    let stream = device
+        .build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                sink.lock().unwrap().extend_from_slice(data);
+            },
+            |err| eprintln!("Probe stream error: {}", err),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+
+    stream.play().map_err(|e| e.to_string())?;
+    std::thread::sleep(std::time::Duration::from_millis(millis));
+    drop(stream);
+
+    let samples = std::mem::take(&mut *buffer.lock().unwrap());
+    let peak = compute_peak(&samples);
+    Ok(MicStats {
+        device_name: device.name().unwrap_or_else(|_| device_name.to_string()),
+        sample_rate,
+        channels,
+        peak,
+        rms: compute_rms(&samples),
+        too_quiet: peak < SILENCE_PEAK_THRESHOLD,
+    })
+}
+
+/// Record briefly from `device_name` and return the peak absolute sample value.
+///
+/// A peak of exactly 0.0 across the whole window means the OS handed us
+/// zero-filled buffers. That is precisely what a missing microphone grant looks
+/// like on macOS: CoreAudio does not fail the stream open, it just returns
+/// silence, so the only way to tell the difference is to look at the samples.
+/// Real hardware always has a nonzero noise floor, so exact zero is a reliable
+/// signal rather than a threshold guess.
+pub fn probe_input_peak(device_name: &str, millis: u64) -> Result<f32, String> {
+    let device = get_device_by_name(device_name)
+        .ok_or_else(|| format!("Audio device not found: {}", device_name))?;
+    let default = device.default_input_config().map_err(|e| e.to_string())?;
+    let config = StreamConfig {
+        channels: default.channels(),
+        sample_rate: default.sample_rate(),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let peak = Arc::new(Mutex::new(0.0f32));
+    let sink = Arc::clone(&peak);
+    let stream = device
+        .build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let observed = compute_peak(data);
+                let mut p = sink.lock().unwrap();
+                if observed > *p {
+                    *p = observed;
+                }
+            },
+            |err| eprintln!("Probe stream error: {}", err),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+
+    stream.play().map_err(|e| e.to_string())?;
+    std::thread::sleep(std::time::Duration::from_millis(millis));
+    drop(stream);
+
+    let observed = *peak.lock().unwrap();
+    Ok(observed)
+}
+
 fn get_device_by_name(name: &str) -> Option<Device> {
     let host = cpal::default_host();
     if name == "default" {
@@ -172,7 +282,10 @@ impl AudioRecorder {
         }
     }
 
-    pub fn stop(&mut self) -> (Vec<u8>, u64) {
+    /// Returns the encoded WAV, its duration, and the peak absolute sample.
+    /// The peak lets the caller distinguish "quiet" from "the OS gave us pure
+    /// silence" before spending a round trip on the transcription API.
+    pub fn stop(&mut self) -> (Vec<u8>, u64, f32) {
         self.stream = None; // Drops the stream, stopping recording
         let samples: Vec<f32> = std::mem::take(&mut *self.buffer.lock().unwrap());
 
@@ -192,8 +305,9 @@ impl AudioRecorder {
         } else {
             0
         };
+        let peak = compute_peak(&mono);
         let wav = encode_wav(&mono, self.sample_rate);
-        (wav, duration_ms)
+        (wav, duration_ms, peak)
     }
 }
 
@@ -242,5 +356,20 @@ mod tests {
     #[test]
     fn test_compute_rms_empty() {
         assert_eq!(compute_rms(&[]), 0.0);
+    }
+
+    #[test]
+    fn silence_threshold_sits_between_idle_noise_and_speech() {
+        // Levels measured on real hardware, so the threshold cannot silently
+        // drift into rejecting speech or accepting a muted mic.
+        let idle_noise_floor = 0.009_186_f32; // idle mic, quiet room
+        let muted_mic = 0.0_f32; // OS withheld audio entirely
+        let speech = 0.626_5_f32; // Yeti capturing speech a metre away
+
+        assert!(muted_mic < SILENCE_PEAK_THRESHOLD, "silence must be rejected");
+        assert!(idle_noise_floor < SILENCE_PEAK_THRESHOLD, "an idle mic must be rejected");
+        assert!(speech > SILENCE_PEAK_THRESHOLD, "speech must never be rejected");
+        // Keep a wide margin below speech so quiet talkers are not cut off.
+        assert!(speech > SILENCE_PEAK_THRESHOLD * 10.0);
     }
 }

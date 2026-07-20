@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      macOS refuses to show the microphone consent prompt for an app that does
+      not declare why it wants the mic. Without this key the app is never listed
+      under Privacy & Security > Microphone, no dialog ever appears, and
+      CoreAudio hands back zero-filled buffers instead of failing — recordings
+      come out the right *length* but completely silent, which Whisper then
+      hallucinates as "Thank you."
+    -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Local SuperWhisper records your microphone so it can transcribe your speech to text.</string>
+
+    <!--
+      paste.rs shells out to osascript to read the frontmost app and restore
+      focus before pasting. Sending Apple events requires this declaration.
+    -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Local SuperWhisper needs to control System Events so it can return focus to the app you were typing in and paste your transcription.</string>
+</dict>
+</plist>

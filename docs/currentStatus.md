@@ -1,6 +1,6 @@
 # Local SuperWhisper — Current Status
 
-Last updated: 2026-05-18 (single-instance fix)
+Last updated: 2026-07-19 (merged upstream main into macOS port)
 
 ---
 
@@ -175,6 +175,137 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 
 ---
 
+## macOS Support (added 2026-04-04)
+
+The app now builds and runs on macOS (Apple Silicon and Intel) in addition to Windows 10 and Linux.
+
+### What was done
+- **paste.rs**: Added `#[cfg(target_os = "macos")]` implementation of `capture_foreground_window()` using AppleScript (`osascript`) to get the frontmost app's PID. Added macOS-specific window restore via AppleScript and paste simulation using `Cmd+V` (`Key::Meta`) instead of `Ctrl+V`.
+- **sounds.rs**: macOS uses `afplay` (built-in) for sound playback instead of `rodio`, matching the Linux approach of using native CLI audio tools for reliability.
+- **tauri.conf.json**: Added `macOS` bundle section (`minimumSystemVersion: "10.15"`). Added `icon.icns` to bundle icon list.
+- **icons/icon.icns**: Generated from existing `icon.png` via `sips`/`iconutil`.
+- **manage.sh**: Added `Darwin` platform detection, macOS autostart via LaunchAgent (`~/Library/LaunchAgents/`), and macOS build dependencies option (Homebrew).
+
+### macOS build requirements
+- Xcode Command Line Tools: `xcode-select --install`
+- Rust: `rustup` (not Homebrew `rust` — ensure `~/.cargo/bin` is in PATH)
+- Node.js
+
+### macOS permission preflight (added 2026-07-19)
+
+macOS withholds permissions *quietly*. A missing microphone grant does not fail
+the audio stream — CoreAudio returns zero-filled buffers, so recordings come out
+the right length and completely silent, which Whisper turns into a confident
+hallucination ("Thank you." every time). That cost a debugging session, so the
+app now checks up front and refuses to guess.
+
+- **`permissions.rs`** — `check_permissions` command returns a list of
+  `PermissionCheck { id, label, description, state, detail, required, settings_url }`.
+  macOS checks: Microphone, Accessibility (`AXIsProcessTrusted`), Automation
+  (osascript probe against System Events). `open_permission_settings` deep-links
+  to the exact pane and only accepts URLs the app itself generated.
+- **The microphone check is empirical, deliberately.** It opens the input for
+  400 ms and looks at the samples. An authorization-status API would have
+  reported "authorized" for the bug above, because the grant was never requested
+  at all. Real hardware always has a nonzero noise floor (measured 0.009 in a
+  quiet room), so an exact peak of 0.0 is a reliable signal rather than a
+  threshold guess.
+- **Preflight gate** — `hotkey.rs` refuses to transcribe a recording whose peak
+  is exactly 0.0 and emits an actionable `recording-error` instead of spending a
+  round trip to get a hallucination back.
+- **UI** — `src/settings/Permissions.tsx`, shown as the first step of the
+  first-run `Setup` flow with live status, per-item deep links, and Re-check.
+  A "Skip for now" escape hatch avoids trapping anyone.
+
+Windows and Linux get the microphone probe only (it is plain cpal and
+platform-neutral); the macOS-specific grants are `cfg`-gated. Windows/Linux
+checks were deliberately **not** implemented, since they could not be verified
+from this machine.
+
+### macOS Accessibility grants lapse on every rebuild (important)
+
+**Symptom:** transcription works, the text reaches the clipboard, but nothing is
+pasted — a manual Cmd+V is required. The app still appears ticked under
+Privacy & Security > Accessibility.
+
+**Cause:** TCC pins permissions to a code requirement. For properly signed apps
+that requirement is identity-based and survives updates:
+
+```
+iTerm2:  anchor apple generic and identifier "com.googlecode.iterm2"
+         and certificate leaf[subject.OU] = H7V7XYVQ7D
+```
+
+This app is **ad-hoc signed**, so TCC falls back to pinning the exact binary:
+
+```
+Local SuperWhisper:  cdhash H"dd5b3505659c2a05a5479e41192cddd82158592b"
+```
+
+Every rebuild produces a new cdhash, so the grant silently stops applying.
+`CGEventPost` still returns success — the keystroke just never arrives.
+Both `kTCCServiceAccessibility` and `kTCCServicePostEvent` are affected.
+
+**Workaround after each install:** System Settings > Privacy & Security >
+Accessibility, remove the app with the minus button, then add it back. Or
+`tccutil reset Accessibility com.localsuperwhisper.app`.
+
+**Real fix:** sign with a stable identity (Developer ID). Then TCC records an
+identifier + certificate requirement instead of a cdhash and grants survive
+updates — the same reason the Windows signing pipeline in `signing/` exists.
+
+**Mitigation in code:** `paste.rs` now calls `AXIsProcessTrusted()` before
+posting events and returns an explanatory error rather than failing silently;
+`hotkey.rs` emits `paste-error`, which the overlay shows alongside the result
+(the transcription is still on the clipboard) and keeps visible for 9s.
+Diagnosing this by hand takes a while, so `Permissions.tsx` is embedded in the
+Configuration tab as well as first-run setup.
+
+### macOS accessibility permissions
+- **Required**: macOS requires Accessibility permissions for `enigo` to simulate Cmd+V paste. On first run, the OS will prompt to grant access in System Settings > Privacy & Security > Accessibility.
+- Without this permission, transcription will succeed but auto-paste into the target window will fail silently.
+
+### macOS build artifacts
+- `.app` bundle: `src-tauri/target/release/bundle/macos/Local SuperWhisper.app`
+- `.dmg` installer: `src-tauri/target/release/bundle/dmg/Local SuperWhisper_0.1.2_aarch64.dmg` (or `x64`)
+- Verified built on 2026-07-19 (aarch64, 8.3 MB dmg, sounds correctly bundled into `Contents/Resources/sounds/`)
+
+> The executable **inside** the `.app` is named `local-super-whisper` (the cargo
+> bin name), *not* `Local SuperWhisper` (productName). `manage.sh` depends on
+> this path.
+
+### Bundle targets — cross-platform gotcha
+
+`tauri.conf.json` has `bundle.targets: ["nsis"]` so Windows releases produce a
+single signed NSIS installer. Tauri v2 has **no per-platform `targets` key** —
+that list is global, so leaving it alone would mean macOS and Linux builds
+produce no installable artifact at all.
+
+`manage.sh` resolves this with a per-platform `BUNDLES` variable passed to
+`tauri build --bundles`:
+
+| Platform | `BUNDLES` | Notes |
+|----------|-----------|-------|
+| macOS | `app,dmg` | |
+| Linux | `deb,rpm` | `appimage` omitted — linuxdeploy needs a desktop session |
+| Windows | *(empty)* | falls through to `bundle.targets` in the config (signed nsis) |
+
+If you build by hand instead of via `manage.sh`, pass `--bundles` yourself on
+macOS/Linux or you will get no bundle.
+
+### macOS known limitations
+- **Accessibility permissions**: Must be granted manually for paste simulation to work
+- **Modifier-only hotkeys**: Not supported (same as other platforms — use F9–F12)
+- **Rust toolchain**: Must use `rustup`-managed Rust (1.88+), not Homebrew `rust` which may be too old.
+  Confirmed 2026-07-19: Homebrew installs `rustc` into `/opt/homebrew/bin`, which shadows
+  `~/.cargo/bin` on a default PATH. `cargo check` then fails outright ("requires rustc 1.88").
+  Put `~/.cargo/bin` **ahead** of `/opt/homebrew/bin` in your shell profile.
+- **pm2 not installed**: `manage.sh` options 1–6 (start/stop/restart/logs/redeploy/status) all
+  call `check_pm2` and abort. Building works, but `redeploy` cannot run until `npm install -g pm2`.
+  The pm2-based process management is Windows-oriented; macOS autostart uses the LaunchAgent instead.
+
+---
+
 ## Known Issues / Next Steps
 
 ### Unresolved
@@ -185,8 +316,9 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 - **Multiple zombie instances (2026-05-18)**: App would accumulate multiple `local-super-whisper.exe` processes over time (one had been running since May 14). Each new instance failed to register the hotkey (previous instance held it), then cleared `hotkey = ""` from the DB, leaving no instance with a working hotkey or tray response. Fixed by adding `tauri-plugin-single-instance` — second launches now focus the running instance and exit immediately. Users who hit this before the fix must re-enter their hotkey in the setup screen on first launch.
 
 ### Ready to work on
+- Test macOS build: tray icon, overlay, audio recording, paste with accessibility permissions
 - Test the Linux build on an Ubuntu 22 desktop with display (tray icon, overlay transparency, audio recording, paste)
-- Test on Windows native to confirm no regressions from the Linux port
+- Test on Windows native to confirm no regressions from the Linux/macOS ports
 - Revert `settings` window `visible` to `false` before building for production
 - Complete the onboarding checklist UX (checklist steps aren't being auto-completed yet)
 - The `customize_shortcuts` checklist step should auto-complete after the user sets a hotkey in Setup
@@ -201,6 +333,14 @@ sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev \
 3. `npm install`
 4. `npm run tauri -- dev`    ← dev mode with hot reload
 5. `npm run tauri -- build`  ← produces binary + `.deb` + `.rpm` in `src-tauri/target/release/bundle/`
+
+### macOS
+1. Install Xcode Command Line Tools: `xcode-select --install`
+2. Install [Rust](https://rustup.rs) and Node.js (ensure `~/.cargo/bin` is in PATH)
+3. `npm install`
+4. `npm run tauri -- dev`    ← dev mode with hot reload
+5. `npm run tauri -- build`  ← produces `.app` + `.dmg` in `src-tauri/target/release/bundle/`
+6. Grant Accessibility permissions when prompted (required for paste simulation)
 
 ### Windows native
 1. Install [Rust](https://rustup.rs) and Node.js on Windows

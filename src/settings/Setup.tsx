@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
+import Permissions from "./Permissions";
 
 function displayKey(code: string): string {
   const names: Record<string, string> = {
@@ -17,7 +18,12 @@ function displayKey(code: string): string {
   return names[code] || code;
 }
 
+type Step = "permissions" | "hotkey";
+
 export default function Setup({ onDone }: { onDone: () => void }) {
+  // Permissions come first: a missing microphone grant fails silently at
+  // transcription time rather than loudly, so it is worth catching up front.
+  const [step, setStep] = useState<Step>("permissions");
   const [listening, setListening] = useState(false);
   const [chosenKey, setChosenKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -76,6 +82,16 @@ export default function Setup({ onDone }: { onDone: () => void }) {
       setSaving(false);
     }
   };
+
+  if (step === "permissions") {
+    return (
+      <div className="flex h-screen bg-surface items-center justify-center">
+        <div className="max-w-sm w-full px-6">
+          <Permissions onContinue={() => setStep("hotkey")} continueLabel="Next" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-surface items-center justify-center">

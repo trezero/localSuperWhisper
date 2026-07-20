@@ -48,7 +48,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.icns"
     ],
     "resources": ["sounds/*"],
     "publisher": "Local SuperWhisper",
@@ -56,6 +57,12 @@
     "category": "Productivity",
     "shortDescription": "Voice-to-text dictation with local AI",
     "longDescription": "A lightweight desktop app that replicates the Superwhisper workflow using a self-hosted Faster-Whisper backend. Press a hotkey, dictate, and the transcribed text is automatically pasted.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "frameworks": [],
+      "entitlements": null,
+      "exceptionDomain": ""
+    },
     "windows": {
       "certificateThumbprint": "64A2BBF8CE5DE6FE0F16B55B227B5151044CC4CE",
       "digestAlgorithm": "sha256",
