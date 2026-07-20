@@ -153,10 +153,17 @@ fn stop_recording(app: &AppHandle) {
         match result {
             Ok(raw) if !raw.is_empty() => {
                 let text = db::apply_corrections(&raw, &corrections);
-                // Paste text into target window
-                if let Err(e) = crate::paste::paste_text(&text, target_window) {
-                    eprintln!("Paste error: {}", e);
-                }
+                // Paste text into target window. The transcription itself
+                // succeeded and is on the clipboard, so a paste failure is worth
+                // reporting without discarding the result.
+                let paste_failed = match crate::paste::paste_text(&text, target_window) {
+                    Err(e) => {
+                        eprintln!("Paste error: {}", e);
+                        let _ = app_handle.emit("paste-error", e);
+                        true
+                    }
+                    Ok(()) => false,
+                };
 
                 // Save to history
                 let word_count = text.split_whitespace().count() as i32;
@@ -174,10 +181,12 @@ fn stop_recording(app: &AppHandle) {
                 *state.recording_state.lock().unwrap() = RecordingState::Displaying;
                 let _ = app_handle.emit("recording-result", text);
 
-                // Auto-hide after 2.5 seconds
+                // Auto-hide after 2.5s, or leave it up long enough to read the
+                // instructions when the paste failed.
+                let visible_ms = if paste_failed { 9000 } else { 2500 };
                 let app_for_timer = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(visible_ms)).await;
                     let state = app_for_timer.state::<AppState>();
                     let mut rs = state.recording_state.lock().unwrap();
                     if *rs == RecordingState::Displaying {

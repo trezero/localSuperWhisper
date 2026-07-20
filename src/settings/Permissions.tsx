@@ -58,9 +58,12 @@ function Row({ check, onOpen }: { check: PermissionCheck; onOpen: (url: string) 
 export default function Permissions({
   onContinue,
   continueLabel = "Continue",
+  showContinue = true,
 }: {
   onContinue: () => void;
   continueLabel?: string;
+  /** False when embedded in Settings, where there is nothing to advance to. */
+  showContinue?: boolean;
 }) {
   const [checks, setChecks] = useState<PermissionCheck[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -132,16 +135,18 @@ export default function Permissions({
         >
           {checking ? "Checking…" : "Re-check"}
         </button>
-        <button
-          onClick={onContinue}
-          disabled={!ready}
-          className="flex-1 py-2 px-4 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-        >
-          {continueLabel}
-        </button>
+        {showContinue && (
+          <button
+            onClick={onContinue}
+            disabled={!ready}
+            className="flex-1 py-2 px-4 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+          >
+            {continueLabel}
+          </button>
+        )}
       </div>
 
-      {checks !== null && !ready && (
+      {showContinue && checks !== null && !ready && (
         <button
           onClick={onContinue}
           className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors"

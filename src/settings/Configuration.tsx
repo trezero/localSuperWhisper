@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Permissions from "./Permissions";
 
 function displayKey(code: string): string {
   const names: Record<string, string> = {
@@ -163,6 +164,13 @@ export default function Configuration() {
           ))}
         </select>
       </Field>
+
+      {/* Permissions. Worth having here and not only in first-run setup: on
+          macOS these grants are tied to one exact build of an unsigned app, so
+          they silently lapse whenever a new version is installed. */}
+      <div className="pt-2 border-t border-white/10">
+        <Permissions onContinue={() => {}} showContinue={false} />
+      </div>
     </div>
   );
 }

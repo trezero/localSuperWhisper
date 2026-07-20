@@ -128,6 +128,22 @@ pub fn paste_text(text: &str, target_window: Option<isize>) -> Result<(), String
 
     #[cfg(target_os = "macos")]
     {
+        // Bail out before posting events that macOS would silently discard.
+        // Without Accessibility, CGEventPost succeeds and returns no error, the
+        // keystroke simply never arrives — which looks exactly like "paste is
+        // broken" even though the clipboard was set correctly.
+        if !crate::permissions::accessibility_trusted() {
+            return Err(
+                "macOS is not allowing this app to press Cmd+V. The text is on your \
+                 clipboard — press Cmd+V to paste it. To fix this permanently, open \
+                 System Settings > Privacy & Security > Accessibility. If Local \
+                 SuperWhisper is already ticked there, remove it with the minus \
+                 button and add it back: macOS ties the permission to one exact \
+                 build, so installing a new version silently invalidates it."
+                    .into(),
+            );
+        }
+
         // Restore focus to the target app by PID
         if let Some(pid) = target_window {
             let script = format!(

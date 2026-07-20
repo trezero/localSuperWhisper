@@ -222,6 +222,45 @@ platform-neutral); the macOS-specific grants are `cfg`-gated. Windows/Linux
 checks were deliberately **not** implemented, since they could not be verified
 from this machine.
 
+### macOS Accessibility grants lapse on every rebuild (important)
+
+**Symptom:** transcription works, the text reaches the clipboard, but nothing is
+pasted — a manual Cmd+V is required. The app still appears ticked under
+Privacy & Security > Accessibility.
+
+**Cause:** TCC pins permissions to a code requirement. For properly signed apps
+that requirement is identity-based and survives updates:
+
+```
+iTerm2:  anchor apple generic and identifier "com.googlecode.iterm2"
+         and certificate leaf[subject.OU] = H7V7XYVQ7D
+```
+
+This app is **ad-hoc signed**, so TCC falls back to pinning the exact binary:
+
+```
+Local SuperWhisper:  cdhash H"dd5b3505659c2a05a5479e41192cddd82158592b"
+```
+
+Every rebuild produces a new cdhash, so the grant silently stops applying.
+`CGEventPost` still returns success — the keystroke just never arrives.
+Both `kTCCServiceAccessibility` and `kTCCServicePostEvent` are affected.
+
+**Workaround after each install:** System Settings > Privacy & Security >
+Accessibility, remove the app with the minus button, then add it back. Or
+`tccutil reset Accessibility com.localsuperwhisper.app`.
+
+**Real fix:** sign with a stable identity (Developer ID). Then TCC records an
+identifier + certificate requirement instead of a cdhash and grants survive
+updates — the same reason the Windows signing pipeline in `signing/` exists.
+
+**Mitigation in code:** `paste.rs` now calls `AXIsProcessTrusted()` before
+posting events and returns an explanatory error rather than failing silently;
+`hotkey.rs` emits `paste-error`, which the overlay shows alongside the result
+(the transcription is still on the clipboard) and keeps visible for 9s.
+Diagnosing this by hand takes a while, so `Permissions.tsx` is embedded in the
+Configuration tab as well as first-run setup.
+
 ### macOS accessibility permissions
 - **Required**: macOS requires Accessibility permissions for `enigo` to simulate Cmd+V paste. On first run, the OS will prompt to grant access in System Settings > Privacy & Security > Accessibility.
 - Without this permission, transcription will succeed but auto-paste into the target window will fail silently.

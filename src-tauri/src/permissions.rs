@@ -104,9 +104,20 @@ extern "C" {
     fn AXIsProcessTrusted() -> u8;
 }
 
+/// Whether macOS currently trusts this process to post synthetic input.
+///
+/// This flips to false on its own whenever the app is rebuilt without a stable
+/// signing identity: TCC pins an ad-hoc signed app by cdhash, and every build
+/// produces a new one. The grant still *looks* enabled in System Settings, but
+/// synthetic key events are silently dropped.
+#[cfg(target_os = "macos")]
+pub fn accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
 #[cfg(target_os = "macos")]
 fn check_accessibility() -> PermissionCheck {
-    let trusted = unsafe { AXIsProcessTrusted() } != 0;
+    let trusted = accessibility_trusted();
     PermissionCheck::new(
         "accessibility",
         "Accessibility",
@@ -119,7 +130,15 @@ fn check_accessibility() -> PermissionCheck {
         if trusted {
             None
         } else {
-            Some("Without this, transcription succeeds but nothing gets pasted.".into())
+            Some(
+                "Without this, transcription succeeds but nothing gets pasted — the \
+                 text is copied to the clipboard and you have to press Cmd+V yourself. \
+                 If this app is already ticked in the list, the grant has gone stale: \
+                 macOS pins unsigned apps to an exact build, and installing a new \
+                 version invalidates it. Remove the app from the list with the minus \
+                 button, then add it again."
+                    .into(),
+            )
         },
     )
 }
