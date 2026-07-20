@@ -10,19 +10,30 @@ ECOSYSTEM="$SCRIPT_DIR/ecosystem.config.cjs"
 LOG_DIR="$SCRIPT_DIR/logs"
 
 # ── platform detection ─────────────────────────────────────────────────────
+# BUNDLES is passed to `tauri build --bundles`. tauri.conf.json's bundle.targets
+# is a single global list (Tauri v2 has no per-platform key) and is pinned to
+# "nsis" for Windows releases, so macOS and Linux must override it here or they
+# produce no installable artifact at all.
 OS="$(uname -s)"
 case "$OS" in
   Linux*)
     PLATFORM="linux"
     EXE="$SCRIPT_DIR/src-tauri/target/release/local-super-whisper"
+    # appimage is omitted: linuxdeploy needs a desktop session and fails headless.
+    BUNDLES="deb,rpm"
     ;;
   Darwin*)
     PLATFORM="macos"
-    EXE="$SCRIPT_DIR/src-tauri/target/release/bundle/macos/Local SuperWhisper.app/Contents/MacOS/Local SuperWhisper"
+    # Inside the .app the executable keeps the cargo bin name, not productName.
+    APP_BUNDLE="$SCRIPT_DIR/src-tauri/target/release/bundle/macos/Local SuperWhisper.app"
+    EXE="$APP_BUNDLE/Contents/MacOS/local-super-whisper"
+    BUNDLES="app,dmg"
     ;;
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
     PLATFORM="windows"
     EXE="$SCRIPT_DIR/src-tauri/target/release/local-super-whisper.exe"
+    # Empty = defer to bundle.targets in tauri.conf.json (nsis, signed).
+    BUNDLES=""
     ;;
   *)
     echo "Unsupported platform: $OS"
@@ -114,7 +125,12 @@ cmd_redeploy() {
   npm run build
 
   info "Compiling Tauri/Rust release binary…"
-  npm run tauri -- build
+  if [[ -n "$BUNDLES" ]]; then
+    info "Bundle targets: $BUNDLES"
+    npm run tauri -- build --bundles "$BUNDLES"
+  else
+    npm run tauri -- build
+  fi
 
   if ! check_built; then
     error "Build succeeded but exe not found at expected path."
@@ -165,7 +181,7 @@ EOF
     <array>
         <string>open</string>
         <string>-a</string>
-        <string>$SCRIPT_DIR/src-tauri/target/release/bundle/macos/Local SuperWhisper.app</string>
+        <string>$APP_BUNDLE</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

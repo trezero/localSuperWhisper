@@ -197,12 +197,42 @@ The app now builds and runs on macOS (Apple Silicon and Intel) in addition to Wi
 
 ### macOS build artifacts
 - `.app` bundle: `src-tauri/target/release/bundle/macos/Local SuperWhisper.app`
-- `.dmg` installer: `src-tauri/target/release/bundle/dmg/Local SuperWhisper_0.1.0_aarch64.dmg` (or `x64`)
+- `.dmg` installer: `src-tauri/target/release/bundle/dmg/Local SuperWhisper_0.1.2_aarch64.dmg` (or `x64`)
+- Verified built on 2026-07-19 (aarch64, 8.3 MB dmg, sounds correctly bundled into `Contents/Resources/sounds/`)
+
+> The executable **inside** the `.app` is named `local-super-whisper` (the cargo
+> bin name), *not* `Local SuperWhisper` (productName). `manage.sh` depends on
+> this path.
+
+### Bundle targets — cross-platform gotcha
+
+`tauri.conf.json` has `bundle.targets: ["nsis"]` so Windows releases produce a
+single signed NSIS installer. Tauri v2 has **no per-platform `targets` key** —
+that list is global, so leaving it alone would mean macOS and Linux builds
+produce no installable artifact at all.
+
+`manage.sh` resolves this with a per-platform `BUNDLES` variable passed to
+`tauri build --bundles`:
+
+| Platform | `BUNDLES` | Notes |
+|----------|-----------|-------|
+| macOS | `app,dmg` | |
+| Linux | `deb,rpm` | `appimage` omitted — linuxdeploy needs a desktop session |
+| Windows | *(empty)* | falls through to `bundle.targets` in the config (signed nsis) |
+
+If you build by hand instead of via `manage.sh`, pass `--bundles` yourself on
+macOS/Linux or you will get no bundle.
 
 ### macOS known limitations
 - **Accessibility permissions**: Must be granted manually for paste simulation to work
 - **Modifier-only hotkeys**: Not supported (same as other platforms — use F9–F12)
-- **Rust toolchain**: Must use `rustup`-managed Rust (1.88+), not Homebrew `rust` which may be too old
+- **Rust toolchain**: Must use `rustup`-managed Rust (1.88+), not Homebrew `rust` which may be too old.
+  Confirmed 2026-07-19: Homebrew installs `rustc` into `/opt/homebrew/bin`, which shadows
+  `~/.cargo/bin` on a default PATH. `cargo check` then fails outright ("requires rustc 1.88").
+  Put `~/.cargo/bin` **ahead** of `/opt/homebrew/bin` in your shell profile.
+- **pm2 not installed**: `manage.sh` options 1–6 (start/stop/restart/logs/redeploy/status) all
+  call `check_pm2` and abort. Building works, but `redeploy` cannot run until `npm install -g pm2`.
+  The pm2-based process management is Windows-oriented; macOS autostart uses the LaunchAgent instead.
 
 ---
 
