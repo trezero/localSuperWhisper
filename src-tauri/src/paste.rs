@@ -140,17 +140,31 @@ pub fn paste_text(text: &str, target_window: Option<isize>) -> Result<(), String
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
-        // Simulate Cmd+V (macOS paste)
+        // Simulate Cmd+V (macOS paste).
+        //
+        // Use the raw virtual keycode rather than Key::Unicode('v'). enigo maps
+        // Key::Unicode through get_layoutdependent_keycode(), which brute-forces
+        // keycodes 0..128 through the Carbon/HIToolbox Text Input Source APIs
+        // (TISCopyCurrentKeyboardInputSource / TISGetInputSourceProperty). Those
+        // assert they are on the main dispatch queue, and paste_text() runs on a
+        // tokio worker — so that path SIGTRAPs the moment a transcription lands.
+        // Key::Other is a straight cast to CGKeyCode and touches no TSM API.
+        //
+        // kVK_ANSI_V is also the *correct* choice for a Cmd shortcut: macOS
+        // resolves Cmd-key shortcuts by physical key position (cf. Apple's
+        // "Dvorak - QWERTY ⌘" layout), which is what this constant encodes.
+        const KVK_ANSI_V: u32 = 0x09;
+
         let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Enigo error: {}", e))?;
         enigo
             .key(Key::Meta, Direction::Press)
             .map_err(|e| format!("Key press error: {}", e))?;
-        enigo
-            .key(Key::Unicode('v'), Direction::Click)
-            .map_err(|e| format!("Key click error: {}", e))?;
-        enigo
-            .key(Key::Meta, Direction::Release)
-            .map_err(|e| format!("Key release error: {}", e))?;
+        let click = enigo.key(Key::Other(KVK_ANSI_V), Direction::Click);
+        // Release Cmd even if the click failed, or the modifier stays stuck down
+        // system-wide.
+        let release = enigo.key(Key::Meta, Direction::Release);
+        click.map_err(|e| format!("Key click error: {}", e))?;
+        release.map_err(|e| format!("Key release error: {}", e))?;
     }
 
     // Simulate Ctrl+V on Windows
