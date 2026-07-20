@@ -191,6 +191,37 @@ The app now builds and runs on macOS (Apple Silicon and Intel) in addition to Wi
 - Rust: `rustup` (not Homebrew `rust` — ensure `~/.cargo/bin` is in PATH)
 - Node.js
 
+### macOS permission preflight (added 2026-07-19)
+
+macOS withholds permissions *quietly*. A missing microphone grant does not fail
+the audio stream — CoreAudio returns zero-filled buffers, so recordings come out
+the right length and completely silent, which Whisper turns into a confident
+hallucination ("Thank you." every time). That cost a debugging session, so the
+app now checks up front and refuses to guess.
+
+- **`permissions.rs`** — `check_permissions` command returns a list of
+  `PermissionCheck { id, label, description, state, detail, required, settings_url }`.
+  macOS checks: Microphone, Accessibility (`AXIsProcessTrusted`), Automation
+  (osascript probe against System Events). `open_permission_settings` deep-links
+  to the exact pane and only accepts URLs the app itself generated.
+- **The microphone check is empirical, deliberately.** It opens the input for
+  400 ms and looks at the samples. An authorization-status API would have
+  reported "authorized" for the bug above, because the grant was never requested
+  at all. Real hardware always has a nonzero noise floor (measured 0.009 in a
+  quiet room), so an exact peak of 0.0 is a reliable signal rather than a
+  threshold guess.
+- **Preflight gate** — `hotkey.rs` refuses to transcribe a recording whose peak
+  is exactly 0.0 and emits an actionable `recording-error` instead of spending a
+  round trip to get a hallucination back.
+- **UI** — `src/settings/Permissions.tsx`, shown as the first step of the
+  first-run `Setup` flow with live status, per-item deep links, and Re-check.
+  A "Skip for now" escape hatch avoids trapping anyone.
+
+Windows and Linux get the microphone probe only (it is plain cpal and
+platform-neutral); the macOS-specific grants are `cfg`-gated. Windows/Linux
+checks were deliberately **not** implemented, since they could not be verified
+from this machine.
+
 ### macOS accessibility permissions
 - **Required**: macOS requires Accessibility permissions for `enigo` to simulate Cmd+V paste. On first run, the OS will prompt to grant access in System Settings > Privacy & Security > Accessibility.
 - Without this permission, transcription will succeed but auto-paste into the target window will fail silently.

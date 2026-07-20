@@ -74,12 +74,40 @@ fn stop_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
 
     // Stop recording and get WAV data
-    let (wav_bytes, duration_ms) = {
+    let (wav_bytes, duration_ms, peak) = {
         let mut recorder = state.recorder.lock().unwrap();
         recorder.stop()
     };
 
     sounds::play_stop();
+
+    // Pure silence means the OS gave us zero-filled buffers rather than audio —
+    // typically a withheld microphone grant, which does not fail the stream
+    // open. Sending this to Whisper produces a confident hallucination ("Thank
+    // you." is the usual one), so stop here and say what is actually wrong.
+    if duration_ms >= 500 && peak == 0.0 {
+        eprintln!("Captured {}ms of pure silence — refusing to transcribe", duration_ms);
+        sounds::play_error();
+        *state.recording_state.lock().unwrap() = RecordingState::Idle;
+        let message = if cfg!(target_os = "macos") {
+            "No audio was captured. Grant microphone access in System Settings > \
+             Privacy & Security > Microphone, then try again."
+        } else {
+            "No audio was captured. Check that the selected microphone is connected \
+             and not muted."
+        };
+        let _ = app.emit("recording-error", message);
+
+        let app_for_timer = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+            if let Some(overlay) = app_for_timer.get_webview_window("overlay") {
+                let _ = overlay.hide();
+            }
+            let _ = app_for_timer.emit("recording-idle", ());
+        });
+        return;
+    }
 
     // Discard if too short (< 500ms)
     if duration_ms < 500 {

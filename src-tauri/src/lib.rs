@@ -2,6 +2,7 @@ mod audio;
 mod db;
 mod hotkey;
 mod paste;
+mod permissions;
 #[cfg(windows)]
 mod win32_hotkey;
 mod sounds;
@@ -344,6 +345,8 @@ pub fn run() {
             get_corrections,
             add_correction,
             remove_correction,
+            permissions::check_permissions,
+            permissions::open_permission_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

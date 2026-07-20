@@ -69,6 +69,53 @@ pub fn list_input_devices() -> Vec<AudioDevice> {
         .unwrap_or_default()
 }
 
+pub fn compute_peak(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()))
+}
+
+/// Record briefly from `device_name` and return the peak absolute sample value.
+///
+/// A peak of exactly 0.0 across the whole window means the OS handed us
+/// zero-filled buffers. That is precisely what a missing microphone grant looks
+/// like on macOS: CoreAudio does not fail the stream open, it just returns
+/// silence, so the only way to tell the difference is to look at the samples.
+/// Real hardware always has a nonzero noise floor, so exact zero is a reliable
+/// signal rather than a threshold guess.
+pub fn probe_input_peak(device_name: &str, millis: u64) -> Result<f32, String> {
+    let device = get_device_by_name(device_name)
+        .ok_or_else(|| format!("Audio device not found: {}", device_name))?;
+    let default = device.default_input_config().map_err(|e| e.to_string())?;
+    let config = StreamConfig {
+        channels: default.channels(),
+        sample_rate: default.sample_rate(),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let peak = Arc::new(Mutex::new(0.0f32));
+    let sink = Arc::clone(&peak);
+    let stream = device
+        .build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let observed = compute_peak(data);
+                let mut p = sink.lock().unwrap();
+                if observed > *p {
+                    *p = observed;
+                }
+            },
+            |err| eprintln!("Probe stream error: {}", err),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+
+    stream.play().map_err(|e| e.to_string())?;
+    std::thread::sleep(std::time::Duration::from_millis(millis));
+    drop(stream);
+
+    let observed = *peak.lock().unwrap();
+    Ok(observed)
+}
+
 fn get_device_by_name(name: &str) -> Option<Device> {
     let host = cpal::default_host();
     if name == "default" {
@@ -172,7 +219,10 @@ impl AudioRecorder {
         }
     }
 
-    pub fn stop(&mut self) -> (Vec<u8>, u64) {
+    /// Returns the encoded WAV, its duration, and the peak absolute sample.
+    /// The peak lets the caller distinguish "quiet" from "the OS gave us pure
+    /// silence" before spending a round trip on the transcription API.
+    pub fn stop(&mut self) -> (Vec<u8>, u64, f32) {
         self.stream = None; // Drops the stream, stopping recording
         let samples: Vec<f32> = std::mem::take(&mut *self.buffer.lock().unwrap());
 
@@ -192,8 +242,9 @@ impl AudioRecorder {
         } else {
             0
         };
+        let peak = compute_peak(&mono);
         let wav = encode_wav(&mono, self.sample_rate);
-        (wav, duration_ms)
+        (wav, duration_ms, peak)
     }
 }
 
