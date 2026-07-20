@@ -35,6 +35,10 @@ pub struct PermissionCheck {
     pub required: bool,
     /// Deep link that opens the exact settings pane, when the OS has one.
     pub settings_url: Option<String>,
+    /// Numbered instructions shown when the check is failing.
+    pub fix_steps: Vec<String>,
+    /// TCC service name, when this permission can be reset and re-requested.
+    pub resettable: Option<String>,
 }
 
 impl PermissionCheck {
@@ -47,7 +51,15 @@ impl PermissionCheck {
             detail: None,
             required,
             settings_url: None,
+            fix_steps: Vec::new(),
+            resettable: None,
         }
+    }
+
+    fn steps(mut self, service: &str, steps: &[&str]) -> Self {
+        self.resettable = Some(service.into());
+        self.fix_steps = steps.iter().map(|s| (*s).to_string()).collect();
+        self
     }
 
     fn with(mut self, state: PermissionState, detail: Option<String>) -> Self {
@@ -76,7 +88,16 @@ fn check_microphone(device: &str) -> PermissionCheck {
     );
 
     #[cfg(target_os = "macos")]
-    let check = check.url("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
+    let check = check
+        .url("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        .steps(
+            "Microphone",
+            &[
+                "Press \"Reset & ask again\" below.",
+                "Press \"Re-check\" — macOS will show a microphone prompt. Choose Allow.",
+                "If no prompt appears, press \"Open Settings\" and switch Local SuperWhisper on.",
+            ],
+        );
 
     match crate::audio::probe_input_peak(device, MIC_PROBE_MS) {
         Ok(peak) if peak > 0.0 => check.with(
@@ -125,6 +146,16 @@ fn check_accessibility() -> PermissionCheck {
         true,
     )
     .url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    .steps(
+        "Accessibility",
+        &[
+            "Press \"Reset & ask again\" below. This clears the stale entry — just \
+             un-ticking and re-ticking the box does not.",
+            "Press \"Open Settings\" to open Privacy & Security > Accessibility.",
+            "Press + , choose Local SuperWhisper from Applications, and switch it on.",
+            "Come back and press \"Re-check\".",
+        ],
+    )
     .with(
         if trusted { PermissionState::Granted } else { PermissionState::Denied },
         if trusted {
@@ -157,18 +188,32 @@ fn check_automation() -> PermissionCheck {
     PermissionCheck::new(
         "automation",
         "Automation (System Events)",
-        "Returns focus to the app you were typing in before pasting.",
-        false,
+        "Returns focus to the app you were typing in, so the paste lands there.",
+        // Required: without it focus never leaves our overlay, and the paste is
+        // delivered to this app instead of where you were typing.
+        true,
     )
     .url("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+    .steps(
+        "AppleEvents",
+        &[
+            "Press \"Reset & ask again\" below.",
+            "Press \"Re-check\" — macOS will ask whether Local SuperWhisper may control \
+             System Events. Choose OK.",
+            "If no prompt appears, press \"Open Settings\" and switch System Events on \
+             under Local SuperWhisper.",
+        ],
+    )
     .with(
         if ok { PermissionState::Granted } else { PermissionState::Denied },
         if ok {
             None
         } else {
             Some(
-                "Without this, text is still pasted, but it may land in the wrong \
-                 window if focus moved."
+                "Without this, focus never returns to where you were typing, so the \
+                 paste is delivered to this app instead and nothing appears in your \
+                 text box. This is a separate grant from Accessibility — refreshing \
+                 one does not refresh the other — and it lapses on every new build."
                     .into(),
             )
         },
@@ -230,6 +275,44 @@ pub fn open_permission_settings(url: String) -> Result<(), String> {
     }
 }
 
+/// Clear a stale TCC grant so the OS will ask again.
+///
+/// macOS pins each permission to one exact build of an unsigned app, so grants
+/// silently lapse on every install and the entry left behind in System Settings
+/// looks correct while doing nothing. Toggling the checkbox does not refresh it;
+/// the record has to be removed. This does that in one step.
+#[tauri::command]
+pub fn reset_permission(service: String) -> Result<String, String> {
+    // Only services this app actually manages.
+    const ALLOWED: [&str; 3] = ["Microphone", "Accessibility", "AppleEvents"];
+    if !ALLOWED.contains(&service.as_str()) {
+        return Err(format!("Refusing to reset unknown service '{}'", service));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("tccutil")
+            .args(["reset", &service, "com.localsuperwhisper.app"])
+            .output()
+            .map_err(|e| format!("Could not run tccutil: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "tccutil could not reset {}: {}",
+                service,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(format!(
+            "{} was reset. Press Re-check — macOS should ask for it again.",
+            service
+        ))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    Err("Resetting permissions is only supported on macOS".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +332,22 @@ mod tests {
         let mic = checks.iter().find(|c| c.id == "microphone").unwrap();
         assert_eq!(mic.state, PermissionState::Denied);
         assert!(mic.detail.is_some());
+    }
+
+    #[test]
+    fn reset_rejects_services_we_do_not_manage() {
+        // tccutil takes "All" as a service name; never let that through.
+        assert!(reset_permission("All".into()).is_err());
+        assert!(reset_permission("SystemPolicyAllFiles".into()).is_err());
+        assert!(reset_permission(String::new()).is_err());
+    }
+
+    #[test]
+    fn failing_checks_carry_actionable_steps() {
+        let checks = run_checks("definitely-not-a-real-device");
+        let mic = checks.iter().find(|c| c.id == "microphone").unwrap();
+        assert!(!mic.fix_steps.is_empty(), "a failing check must tell the user what to do");
+        assert_eq!(mic.resettable.as_deref(), Some("Microphone"));
     }
 
     #[test]

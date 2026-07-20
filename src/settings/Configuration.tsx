@@ -92,6 +92,13 @@ export default function Configuration() {
         {saved && <span className="text-xs text-green-400">Saved</span>}
       </div>
 
+      {/* First, above everything else. These grants lapse on every install and
+          the symptoms are silent, so this needs to be the first thing seen
+          rather than something to go looking for. */}
+      <div className="pb-6 border-b border-white/10">
+        <Permissions onContinue={() => {}} showContinue={false} />
+      </div>
+
       {/* Hotkey */}
       <Field label="Hotkey" description="Global keyboard shortcut to start/stop recording.">
         <div className="space-y-2">
@@ -164,13 +171,6 @@ export default function Configuration() {
           ))}
         </select>
       </Field>
-
-      {/* Permissions. Worth having here and not only in first-run setup: on
-          macOS these grants are tied to one exact build of an unsigned app, so
-          they silently lapse whenever a new version is installed. */}
-      <div className="pt-2 border-t border-white/10">
-        <Permissions onContinue={() => {}} showContinue={false} />
-      </div>
     </div>
   );
 }

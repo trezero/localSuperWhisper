@@ -144,15 +144,36 @@ pub fn paste_text(text: &str, target_window: Option<isize>) -> Result<(), String
             );
         }
 
-        // Restore focus to the target app by PID
+        // Restore focus to the target app by PID.
+        //
+        // This must be checked, not fired and forgotten. If it fails, focus
+        // stays on our own overlay and the Cmd+V below is delivered to us
+        // instead of the user's text box — a paste that reports success and
+        // does nothing. The usual cause is a stale Automation grant, which is
+        // pinned per-build for an unsigned app and is a *separate* permission
+        // from Accessibility, so refreshing one does not refresh the other.
         if let Some(pid) = target_window {
             let script = format!(
                 "tell application \"System Events\" to set frontmost of first process whose unix id is {} to true",
                 pid
             );
-            let _ = std::process::Command::new("osascript")
+            let output = std::process::Command::new("osascript")
                 .args(["-e", &script])
-                .status();
+                .output()
+                .map_err(|e| format!("Could not run osascript: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "macOS is not allowing this app to switch focus back to where you \
+                     were typing, so pasting would go to the wrong place. The text is \
+                     on your clipboard — press Cmd+V to paste it. To fix: System \
+                     Settings > Privacy & Security > Automation > Local SuperWhisper, \
+                     and enable System Events. This is separate from Accessibility, and \
+                     it lapses whenever a new build is installed. ({})",
+                    stderr.trim()
+                ));
+            }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 

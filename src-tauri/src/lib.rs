@@ -347,6 +347,7 @@ pub fn run() {
             remove_correction,
             permissions::check_permissions,
             permissions::open_permission_settings,
+            permissions::reset_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
